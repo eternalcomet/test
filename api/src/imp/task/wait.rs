@@ -59,6 +59,7 @@ impl WaitPid {
 pub fn sys_wait4(pid: i32, exit_code_ptr: UserOutPtr<i32>, options: u32) -> LinuxResult<isize> {
     let options = WaitOptions::from_bits_truncate(options);
     info!("sys_waitpid <= pid: {:?}, options: {:?}", pid, options);
+    error!("{} is waiting", current_process().get_pid());
 
     let process = current_process();
     let process_data = current_process_data();
@@ -98,6 +99,10 @@ pub fn sys_wait4(pid: i32, exit_code_ptr: UserOutPtr<i32>, options: u32) -> Linu
                 unsafe {
                     *exit_code = child.get_exit_code() << 8;
                 }
+            }
+            let pid = child.get_pid();
+            if pid == 53 {
+                error!("breakpoint");
             }
             return Ok(child.get_pid() as _);
         } else if options.contains(WaitOptions::WNOHANG) {

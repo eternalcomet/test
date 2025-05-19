@@ -1,6 +1,6 @@
 use crate::imp::task::signal::{send_signal_process, send_signal_thread};
 use crate::ptr::{PtrWrapper, UserPtr};
-use arceos_posix_api::{close_all_file_like, FD_TABLE};
+use arceos_posix_api::close_all_file_like;
 use axsignal::{SignalInfo, Signo};
 use core::sync::atomic::Ordering;
 use linux_raw_sys::general::SI_KERNEL;

@@ -193,6 +193,12 @@ impl<T> UserPtr<T> {
         unsafe { Ok(&*ptr) }
     }
 
+    pub fn get_as_mut_ref(&self) -> LinuxResult<&'static mut T> {
+        let ptr = self.get()?;
+        // SAFETY: We've validated the memory region.
+        unsafe { Ok(&mut *ptr) }
+    }
+
     pub fn get_as_slice(&self, length: usize) -> LinuxResult<&[T]> {
         let buf = self.get()?;
         unsafe { Ok(slice::from_raw_parts(buf, length)) }

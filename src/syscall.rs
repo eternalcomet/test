@@ -18,7 +18,6 @@ use starry_api::interface::mm::shm::*;
 use starry_api::interface::task::resource::*;
 use starry_api::interface::task::*;
 use starry_api::interface::user::identity::*;
-use starry_api::*;
 use starry_core::task::{time_stat_from_kernel_to_user, time_stat_from_user_to_kernel};
 use syscalls::Sysno;
 
@@ -87,7 +86,7 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
             tf.arg4() as _,
         ),
         Sysno::uname => sys_uname(tf.arg0().into()),
-        Sysno::fstat => interface::fs::sys_fstat(tf.arg0() as _, tf.arg1().into()),
+        Sysno::fstat => sys_fstat(tf.arg0() as _, tf.arg1().into()),
         Sysno::mount => sys_mount(
             tf.arg0().into(),
             tf.arg1().into(),
@@ -97,14 +96,14 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ) as _,
         Sysno::umount2 => sys_umount2(tf.arg0().into(), tf.arg1() as _) as _,
         #[cfg(target_arch = "x86_64")]
-        Sysno::newfstatat => interface::fs::sys_fstatat(
+        Sysno::newfstatat => sys_fstatat(
             tf.arg0() as _,
             tf.arg1().into(),
             tf.arg2().into(),
             tf.arg3() as _,
         ),
         #[cfg(not(target_arch = "x86_64"))]
-        Sysno::fstatat => interface::fs::sys_fstatat(
+        Sysno::fstatat => sys_fstatat(
             tf.arg0() as _,
             tf.arg1().into(),
             tf.arg2().into(),
@@ -256,6 +255,7 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::shmat => sys_shmat(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
         Sysno::shmctl => sys_shmctl(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
+        Sysno::shmdt => sys_shmdt(tf.arg0() as _),
         Sysno::shmget => sys_shmget(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
         Sysno::sigaltstack => sys_sigaltstack(tf.arg0().into(), tf.arg1().into()),
         #[cfg(target_arch = "x86_64")]
@@ -305,13 +305,10 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         #[cfg(target_arch = "x86_64")]
         Sysno::access => stub_bypass(syscall_num),
         Sysno::faccessat => stub_bypass(syscall_num),
-        Sysno::sysinfo => stub_unimplemented(syscall_num),
         Sysno::sync => stub_bypass(syscall_num),
         Sysno::fsync => stub_bypass(syscall_num),
         Sysno::truncate => sys_truncate(tf.arg0().into(), tf.arg1() as _),
         Sysno::ftruncate => sys_ftruncate(tf.arg0() as _, tf.arg1() as _),
-        Sysno::sched_getaffinity => stub_unimplemented(syscall_num),
-        Sysno::sched_setaffinity => stub_unimplemented(syscall_num),
         Sysno::syslog => stub_bypass(syscall_num),
         _ => stub_unimplemented(syscall_num),
     };

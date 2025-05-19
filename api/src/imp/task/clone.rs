@@ -171,6 +171,7 @@ pub fn sys_clone_impl(
 
     // share or create process/thread data
     if clone_flags.contains(CloneFlags::FILES) {
+        error!("cloned files");
         FD_TABLE
             .deref_from(&thread_data.namespace)
             .init_shared(FD_TABLE.share());

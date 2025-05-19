@@ -1,10 +1,10 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicU32, Ordering};
 use axalloc::global_allocator;
 use axerrno::{LinuxError, LinuxResult};
 use axsync::Mutex;
-use memory_addr::{PAGE_SIZE_4K};
+use core::sync::atomic::{AtomicU32, Ordering};
+use memory_addr::PAGE_SIZE_4K;
 
 pub struct SharedMemory {
     /// The key of the shared memory segment

@@ -74,39 +74,6 @@ impl From<arceos_posix_api::ctypes::stat> for Kstat {
     }
 }
 
-#[apply(syscall_instrument)]
-pub fn sys_fstatat(
-    dir_fd: isize,
-    path: UserConstPtr<c_char>,
-    kstatbuf: UserPtr<Kstat>,
-    _flags: i32,
-) -> LinuxResult<isize> {
-    let path = path.get_as_null_terminated()?;
-    info!("[sys_fstatat] dir_fd: {}, path: {:?}", dir_fd, path);
-    let path = arceos_posix_api::handle_file_path(dir_fd, Some(path.as_ptr() as _), false)?;
-
-    let kstatbuf = kstatbuf.get()?;
-
-    let mut statbuf = arceos_posix_api::ctypes::stat::default();
-    let result = unsafe {
-        arceos_posix_api::sys_stat(
-            path.as_ptr() as _,
-            &mut statbuf as *mut arceos_posix_api::ctypes::stat,
-        )
-    };
-    if result < 0 {
-        return Ok(result as _);
-    }
-
-    unsafe {
-        let kstat = Kstat::from(statbuf);
-        debug!("[sys_fstatat] kstat: {:?}", kstat);
-        kstatbuf.write(kstat);
-    }
-
-    Ok(0)
-}
-
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct FsStatxTimestamp {
