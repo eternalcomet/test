@@ -1,0 +1,24 @@
+Set AX_ROOT (ArceOS directory) to /home/dragon/os/oscomp-test-eternalcomet/.arceos
+make[1]: Entering directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+[93;1mwarning[0m: disk image "disk.img" already exists!
+make[1]: Leaving directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+make[1]: Entering directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+[37maxconfig-gen[0m [90mconfigs/defconfig.toml configs/platforms/loongarch64-qemu-virt.toml /home/dragon/os/oscomp-test-eternalcomet/configs/loongarch64.toml -w smp=1 -w arch=loongarch64 -w platform=loongarch64-qemu-virt -o "/home/dragon/os/oscomp-test-eternalcomet/.axconfig.toml"[0m
+make[1]: Leaving directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+cp /home/dragon/os/oscomp-test-eternalcomet/sdcard-loongarch64.img /home/dragon/os/oscomp-test-eternalcomet/.arceos/disk.img
+make AX_TESTCASE=oscomp BLK=y NET=y FEATURES=fp_simd,lwext4_rs LOG=error run
+make[1]: Entering directory '/home/dragon/os/oscomp-test-eternalcomet'
+Set AX_ROOT (ArceOS directory) to /home/dragon/os/oscomp-test-eternalcomet/.arceos
+make[2]: Entering directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+[93;1mwarning[0m: disk image "disk.img" already exists!
+make[2]: Leaving directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+make[2]: Entering directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+[37maxconfig-gen[0m [90mconfigs/defconfig.toml configs/platforms/loongarch64-qemu-virt.toml /home/dragon/os/oscomp-test-eternalcomet/configs/loongarch64.toml -w smp=1 -w arch=loongarch64 -w platform=loongarch64-qemu-virt -o "/home/dragon/os/oscomp-test-eternalcomet/.axconfig.toml" -c "/home/dragon/os/oscomp-test-eternalcomet/.axconfig.toml"[0m
+    [92;1mBuilding[0m App: oscomp-test-eternalcomet, Arch: loongarch64, Platform: loongarch64-qemu-virt, App type: rust
+[37mcargo -C /home/dragon/os/oscomp-test-eternalcomet build[0m [90m-Z unstable-options --target loongarch64-unknown-none --target-dir /home/dragon/os/oscomp-test-eternalcomet/target --release  --features "axfeat/log-level-error axfeat/fp_simd axfeat/lwext4_rs"[0m
+[37mrust-objcopy --binary-architecture=loongarch64[0m [90m/home/dragon/os/oscomp-test-eternalcomet/oscomp-test-eternalcomet_loongarch64-qemu-virt.elf --strip-all -O binary /home/dragon/os/oscomp-test-eternalcomet/oscomp-test-eternalcomet_loongarch64-qemu-virt.bin[0m
+    [96;1mRunning[0m on qemu...
+[37mqemu-system-loongarch64[0m [90m-m 4G -smp 1 -machine virt -kernel /home/dragon/os/oscomp-test-eternalcomet/oscomp-test-eternalcomet_loongarch64-qemu-virt.elf -device virtio-blk-pci,drive=disk0 -drive id=disk0,if=none,format=raw,file=disk.img -device virtio-net-pci,netdev=net0 -netdev user,id=net0,hostfwd=tcp::5555-:5555,hostfwd=udp::5555-:5555 -nographic[0m
+QEMU: Terminated
+make[2]: Leaving directory '/home/dragon/os/oscomp-test-eternalcomet/.arceos'
+make[1]: Leaving directory '/home/dragon/os/oscomp-test-eternalcomet'

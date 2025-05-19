@@ -1,0 +1,30 @@
+# ============ init code for oscomp test ============
+# setup the environment
+/musl/busybox mkdir -p /bin
+/musl/busybox cp /musl/busybox /bin/busybox
+# TODO: link busybox to /bin
+busybox mkdir -p /lib
+
+# ============ test cases compiled with musl ============
+# setup musl libraries
+# TODO: use symlink instead of cp
+busybox cp /musl/lib/libc.so /lib/ld-linux-aarch64.so.1
+busybox cp /musl/lib/libc.so /lib/ld-linux-riscv64-lp64.so.1
+busybox cp /musl/lib/libc.so /lib/ld-musl-riscv64.so.1
+busybox cp /musl/lib/libc.so /lib/ld-linux-loongarch-lp64d.so.1
+busybox cp /musl/lib/libc.so /lib/ld-linux-x86-64.so.2
+busybox cp /musl/lib/* /lib/
+busybox rm -rf /lib64/
+busybox cp /lib /lib64
+busybox ls -l /lib/
+# begin test
+/musl/basic_testcode.sh
+
+# ============ test cases compiled with glibc ============
+# setup glibc libraries
+busybox cp /glibc/lib/* /lib/
+busybox rm -rf /lib64/
+busybox cp /lib /lib64
+busybox ls -l /lib/
+# begin test
+/glibc/basic_testcode.sh

@@ -1,0 +1,13 @@
+checking for version `GLIBC_2.27' in file /lib/libm.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+checking for version `GLIBC_2.33' in file /lib/libm.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+/lib/libm.so.6: error: version lookup error: version `GLIBC_2.33' not found (required by /glibc/entry-dynamic.exe) (continued)
+/glibc/entry-dynamic.exe: /lib/libm.so.6: version `GLIBC_2.33' not found (required by /glibc/entry-dynamic.exe)
+checking for version `GLIBC_2.34' in file /lib/libm.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+/lib/libm.so.6: error: version lookup error: version `GLIBC_2.34' not found (required by /glibc/entry-dynamic.exe) (continued)
+/glibc/entry-dynamic.exe: /lib/libm.so.6: version `GLIBC_2.34' not found (required by /glibc/entry-dynamic.exe)
+checking for version `GLIBC_2.27' in file /lib/libm.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+checking for version `GLIBC_2.27' in file /lib/ld-linux-riscv64-lp64d.so.1 [0] required by file /lib/libm.so.6 [0]
+checking for version `GLIBC_2.27' in file /lib/libm.so.6 [0] required by file /lib/libm.so.6 [0]
+checking for version `GLIBC_PRIVATE' in file /lib/libm.so.6 [0] required by file /lib/libm.so.6 [0]
+/lib/libm.so.6: error: version lookup error: version `GLIBC_PRIVATE' not found (required by /lib/libm.so.6) (continued)
+/glibc/entry-dynamic.exe: /lib/libm.so.6: version `GLIBC_PRIVATE' not found (required by /lib/libm.so.6)

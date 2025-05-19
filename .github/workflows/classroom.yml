@@ -1,15 +1,14 @@
 name: Autograding Tests
 on: 
   push:
-    branches:
-      - main 
+
     # paths-ignore:
     #   - '.github/**' 
 env:
-  IMG_URL_riscv64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.1/sdcard-riscv64.img.gz # 镜像url
-  IMG_URL_loongarch64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.1/sdcard-loongarch64.img.gz # 镜像url
-  IMG_URL_aarch64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.1/sdcard-aarch64.img.gz # 镜像url
-  IMG_URL_x86_64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.1/sdcard-x86_64.img.gz # 镜像url
+  IMG_URL_riscv64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.2/sdcard-riscv64.img.gz # 镜像url
+  IMG_URL_loongarch64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.2/sdcard-loongarch64.img.gz # 镜像url
+  IMG_URL_aarch64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.2/sdcard-aarch64.img.gz # 镜像url
+  IMG_URL_x86_64: https://github.com/Azure-stars/testsuits-for-oskernel/releases/download/v0.2/sdcard-x86_64.img.gz # 镜像url
   TIMEOUT: 1000 # 超时时间
   SCRIPT_REPO: https://github.com/oscontent25/EvaluationScript # 脚本仓库
   
@@ -55,27 +54,30 @@ jobs:
           echo 'start---aarch64' > aarch64_output.txt
           touch x86_64_output.txt
           echo 'start---x86_64' > x86_64_output.txt
-          make oscomp_run ARCH=riscv64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs >> riscv64_output.txt || true
-          echo 'end---riscv64' >> riscv64_output.txt
+          make oscomp_run ARCH=riscv64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs | tee -a riscv64_output.txt || true
+          echo 'end---riscv64' | tee -a riscv64_output.txt
           make clean
-          make oscomp_run ARCH=loongarch64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs >> loongarch64_output.txt || true
-          echo 'end---loongarch64' >> loongarch64_output.txt
+          rm *.img
+          make oscomp_run ARCH=loongarch64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs | tee -a loongarch64_output.txt || true
+          echo 'end---loongarch64' | tee -a loongarch64_output.txt
           make clean
-          make oscomp_run ARCH=aarch64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs >> aarch64_output.txt || true
-          echo 'end---aarch64' >> aarch64_output.txt
+          rm *.img
+          make oscomp_run ARCH=aarch64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs | tee -a aarch64_output.txt || true
+          echo 'end---aarch64' | tee -a aarch64_output.txt
           make clean
-          make oscomp_run ARCH=x86_64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs ACCEL=n >> x86_64_output.txt || true
-          echo 'end---x86_64' >> x86_64_output.txt
+          rm *.img
+          make oscomp_run ARCH=x86_64 BLK=y NET=y FEATURES=fp_simd,lwext4_rs ACCEL=n | tee -a x86_64_output.txt || true
+          echo 'end---x86_64' | tee -a x86_64_output.txt
+          rm *.img
           touch output.txt
           cat riscv64_output.txt >> output.txt
           cat loongarch64_output.txt >> output.txt
           cat aarch64_output.txt >> output.txt
           cat x86_64_output.txt >> output.txt
-          cat output.txt
           
       - name: Download EvaluationScript
         run: |
-            git clone ${{ env.SCRIPT_REPO }} .github/classroom
+            git clone https://github.com/eternalcomet/EvaluationScript/ .github/classroom
 
       - name: glibcbasic-test
         uses: oscontent25/os-autograding@master

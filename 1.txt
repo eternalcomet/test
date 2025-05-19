@@ -1,0 +1,11 @@
+checking for version `GLIBC_2.27' in file /lib/libm.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+checking for version `GLIBC_2.33' in file /lib/libc.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+checking for version `GLIBC_2.34' in file /lib/libc.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+checking for version `GLIBC_2.27' in file /lib/libc.so.6 [0] required by file /glibc/entry-dynamic.exe [0]
+checking for version `GLIBC_2.27' in file /lib/ld-linux-riscv64-lp64d.so.1 [0] required by file /lib/libm.so.6 [0]
+checking for version `GLIBC_2.27' in file /lib/libc.so.6 [0] required by file /lib/libm.so.6 [0]
+checking for version `GLIBC_PRIVATE' in file /lib/libc.so.6 [0] required by file /lib/libm.so.6 [0]
+checking for version `GLIBC_2.27' in file /lib/ld-linux-riscv64-lp64d.so.1 [0] required by file /lib/libc.so.6 [0]
+checking for version `GLIBC_PRIVATE' in file /lib/ld-linux-riscv64-lp64d.so.1 [0] required by file /lib/libc.so.6 [0]
+
+calling preinit: /glibc/entry-dynamic.exe

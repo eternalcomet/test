@@ -1,0 +1,520 @@
+Subject: [PATCH] refactor: post trap handler in x86_64
+Merge remote-tracking branch 'oscomp/main'
+refactor(task): WaitQueue::requeue
+feat(task): avoid deadlock in WaitQueue::requeue
+refactor: call post_trap_callback in x86_syscall_handler
+refactor: remove unnecessary changes
+feat: support settings tls in TrapFrame
+feat: support requeue in WaitQueue
+refactor(axhal): move pc+=4 before handle syscall to achieve consistent handling
+fix(axhal): x86_64 TrapFrame sp
+fix(context): x86_64 name conflict
+refactor: rename POST_TRAP handler -> callback
+style: avoid using magic number
+refactor: rename ANY_TRAP -> POST_TRAP
+feat: update any trap handling, avoid excessive log output
+feat(trap): add any trap handler
+fix(axmm): linear memory does not need copying
+---
+Index: modules/axhal/linker.lds.S
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/linker.lds.S b/modules/axhal/linker.lds.S
+--- a/modules/axhal/linker.lds.S	(revision 5f8e2b28945145b6d88e3e40262fc19a613188d7)
++++ b/modules/axhal/linker.lds.S	(revision fa949c7b4bafa066a7b3fe347156e9800df4e010)
+@@ -96,6 +96,8 @@
+     linkm2_PAGE_FAULT : { *(linkm2_PAGE_FAULT) }
+     linkme_SYSCALL : { *(linkme_SYSCALL) }
+     linkm2_SYSCALL : { *(linkm2_SYSCALL) }
++    linkme_POST_TRAP : { *(linkme_POST_TRAP) }
++    linkm2_POST_TRAP : { *(linkm2_POST_TRAP) }
+     axns_resource : { *(axns_resource) }
+ }
+ INSERT AFTER .tbss;
+Index: modules/axmm/src/aspace.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axmm/src/aspace.rs b/modules/axmm/src/aspace.rs
+--- a/modules/axmm/src/aspace.rs	(revision 5f8e2b28945145b6d88e3e40262fc19a613188d7)
++++ b/modules/axmm/src/aspace.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
+@@ -394,6 +394,10 @@
+                 .areas
+                 .map(new_area, &mut new_aspace.pt, false)
+                 .map_err(mapping_err_to_ax_err)?;
++
++            if matches!(backend, Backend::Linear { .. }) {
++                continue;
++            }
+             // Copy data from old memory area to new memory area.
+             for vaddr in
+                 PageIter4K::new(area.start(), area.end()).expect("Failed to create page iterator")
+Index: modules/axhal/src/arch/aarch64/trap.S
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/aarch64/trap.S b/modules/axhal/src/arch/aarch64/trap.S
+--- a/modules/axhal/src/arch/aarch64/trap.S	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/arch/aarch64/trap.S	(revision feb3fe40ffa8b63ea54a6cec9d65f4a4ef01969a)
+@@ -1,5 +1,5 @@
+ .macro SAVE_REGS
+-    sub     sp, sp, 34 * 8
++    sub     sp, sp, {trapframe_size}
+     stp     x0, x1, [sp]
+     stp     x2, x3, [sp, 2 * 8]
+     stp     x4, x5, [sp, 4 * 8]
+@@ -15,13 +15,19 @@
+     stp     x24, x25, [sp, 24 * 8]
+     stp     x26, x27, [sp, 26 * 8]
+     stp     x28, x29, [sp, 28 * 8]
++    str     x30, [sp, 30 * 8]
+
+     mrs     x9, sp_el0
+-    mrs     x10, elr_el1
+-    mrs     x11, spsr_el1
+-    stp     x30, x9, [sp, 30 * 8]
+-    stp     x10, x11, [sp, 32 * 8]
+-
++    mrs     x10, tpidr_el0
++    mrs     x11, elr_el1
++    mrs     x12, spsr_el1
++    stp     x9, x10, [sp, 31 * 8]
++    stp     x11, x12, [sp, 33 * 8]
++
++    # restore kernel tpidr_el0
++    mrs     x1, tpidrro_el0
++    msr     tpidr_el0, x1
++
+     # We may have interrupted userspace, or a guest, or exit-from or
+     # return-to either of those. So we can't trust sp_el0, and need to
+     # restore it.
+@@ -29,12 +35,18 @@
+ .endm
+
+ .macro RESTORE_REGS
+-    ldp     x10, x11, [sp, 32 * 8]
+-    ldp     x30, x9, [sp, 30 * 8]
++    # backup kernel tpidr_el0
++    mrs     x1, tpidr_el0
++    msr     tpidrro_el0, x1
++
++    ldp     x11, x12, [sp, 33 * 8]
++    ldp     x9, x10, [sp, 31 * 8]
+     msr     sp_el0, x9
+-    msr     elr_el1, x10
+-    msr     spsr_el1, x11
++    msr     tpidr_el0, x10
++    msr     elr_el1, x11
++    msr     spsr_el1, x12
+
++    ldr     x30, [sp, 30 * 8]
+     ldp     x28, x29, [sp, 28 * 8]
+     ldp     x26, x27, [sp, 26 * 8]
+     ldp     x24, x25, [sp, 24 * 8]
+@@ -50,7 +62,7 @@
+     ldp     x4, x5, [sp, 4 * 8]
+     ldp     x2, x3, [sp, 2 * 8]
+     ldp     x0, x1, [sp]
+-    add     sp, sp, 34 * 8
++    add     sp, sp, {trapframe_size}
+ .endm
+
+ .macro INVALID_EXCP, kind, source
+@@ -63,18 +75,20 @@
+     b       .Lexception_return
+ .endm
+
+-.macro HANDLE_SYNC
++.macro HANDLE_SYNC, source
+ .p2align 7
+     SAVE_REGS
+     mov     x0, sp
++    mov     x1, \source
+     bl      handle_sync_exception
+     b       .Lexception_return
+ .endm
+
+-.macro HANDLE_IRQ
++.macro HANDLE_IRQ, source
+ .p2align 7
+     SAVE_REGS
+     mov     x0, sp
++    mov     x1, \source
+     bl      handle_irq_exception
+     b       .Lexception_return
+ .endm
+@@ -90,14 +104,14 @@
+     INVALID_EXCP 3 0
+
+     // current EL, with SP_ELx
+-    HANDLE_SYNC
+-    HANDLE_IRQ
++    HANDLE_SYNC 1
++    HANDLE_IRQ 1
+     INVALID_EXCP 2 1
+     INVALID_EXCP 3 1
+
+     // lower EL, aarch64
+-    HANDLE_SYNC
+-    HANDLE_IRQ
++    HANDLE_SYNC 2
++    HANDLE_IRQ 2
+     INVALID_EXCP 2 2
+     INVALID_EXCP 3 2
+
+Index: modules/axhal/src/arch/aarch64/trap.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/aarch64/trap.rs b/modules/axhal/src/arch/aarch64/trap.rs
+--- a/modules/axhal/src/arch/aarch64/trap.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/arch/aarch64/trap.rs	(revision feb3fe40ffa8b63ea54a6cec9d65f4a4ef01969a)
+@@ -6,7 +6,11 @@
+
+ use super::TrapFrame;
+
+-global_asm!(include_str!("trap.S"), cache_current_task_ptr = sym crate::cpu::cache_current_task_ptr);
++global_asm!(
++    include_str!("trap.S"),
++    trapframe_size = const core::mem::size_of::<TrapFrame>(),
++    cache_current_task_ptr = sym crate::cpu::cache_current_task_ptr,
++);
+
+ #[repr(u8)]
+ #[derive(Debug)]
+@@ -27,6 +31,11 @@
+     LowerAArch64 = 2,
+     LowerAArch32 = 3,
+ }
++impl TrapSource {
++    fn is_from_user(&self) -> bool {
++        matches!(self, TrapSource::LowerAArch64 | TrapSource::LowerAArch32)
++    }
++}
+
+ #[unsafe(no_mangle)]
+ fn invalid_exception(tf: &TrapFrame, kind: TrapKind, source: TrapSource) {
+@@ -37,8 +46,9 @@
+ }
+
+ #[unsafe(no_mangle)]
+-fn handle_irq_exception(_tf: &TrapFrame) {
++fn handle_irq_exception(tf: &mut TrapFrame, source: TrapSource) {
+     handle_trap!(IRQ, 0);
++    crate::trap::post_trap_callback(tf, source.is_from_user());
+ }
+
+ fn handle_instruction_abort(tf: &TrapFrame, iss: u64, is_user: bool) {
+@@ -94,7 +104,7 @@
+ }
+
+ #[unsafe(no_mangle)]
+-fn handle_sync_exception(tf: &mut TrapFrame) {
++fn handle_sync_exception(tf: &mut TrapFrame, source: TrapSource) {
+     let esr = ESR_EL1.extract();
+     let iss = esr.read(ESR_EL1::ISS);
+     match esr.read_as_enum(ESR_EL1::EC) {
+@@ -120,4 +130,5 @@
+             );
+         }
+     }
++    crate::trap::post_trap_callback(tf, source.is_from_user());
+ }
+Index: modules/axhal/src/arch/loongarch64/trap.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/loongarch64/trap.rs b/modules/axhal/src/arch/loongarch64/trap.rs
+--- a/modules/axhal/src/arch/loongarch64/trap.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/arch/loongarch64/trap.rs	(revision bec3096445b538d1b543244c79f8d8ced97ebc09)
+@@ -40,8 +40,8 @@
+     match estat.cause() {
+         #[cfg(feature = "uspace")]
+         Trap::Exception(Exception::Syscall) => {
+-            tf.regs.a0 = crate::trap::handle_syscall(tf, tf.regs.a7) as usize;
+             tf.era += 4;
++            tf.regs.a0 = crate::trap::handle_syscall(tf, tf.regs.a7) as usize;
+         }
+         Trap::Exception(Exception::LoadPageFault)
+         | Trap::Exception(Exception::PageNonReadableFault) => {
+@@ -69,4 +69,6 @@
+             );
+         }
+     }
++
++    crate::trap::post_trap_callback(tf, from_user);
+ }
+Index: modules/axhal/src/arch/riscv/context.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/riscv/context.rs b/modules/axhal/src/arch/riscv/context.rs
+--- a/modules/axhal/src/arch/riscv/context.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/arch/riscv/context.rs	(revision c85e2305d1327a7d39740f4a1636f30fe20a4d56)
+@@ -170,6 +170,13 @@
+     pub const fn set_ra(&mut self, ra: usize) {
+         self.regs.ra = ra;
+     }
++
++    /// Sets the TLS (thread-local storage) register, if containing such a register.
++    #[must_use]
++    pub const fn try_set_tls(&mut self, tls: usize) -> bool {
++        self.regs.tp = tls;
++        true
++    }
+ }
+
+ /// Context to enter user space.
+Index: modules/axhal/src/arch/riscv/trap.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/riscv/trap.rs b/modules/axhal/src/arch/riscv/trap.rs
+--- a/modules/axhal/src/arch/riscv/trap.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/arch/riscv/trap.rs	(revision bec3096445b538d1b543244c79f8d8ced97ebc09)
+@@ -40,8 +40,8 @@
+         match cause {
+             #[cfg(feature = "uspace")]
+             Trap::Exception(E::UserEnvCall) => {
+-                tf.regs.a0 = crate::trap::handle_syscall(tf, tf.regs.a7) as usize;
+                 tf.sepc += 4;
++                tf.regs.a0 = crate::trap::handle_syscall(tf, tf.regs.a7) as usize;
+             }
+             Trap::Exception(E::LoadPageFault) => {
+                 handle_page_fault(tf, MappingFlags::READ, from_user)
+@@ -60,6 +60,7 @@
+                 panic!("Unhandled trap {:?} @ {:#x}:\n{:#x?}", cause, tf.sepc, tf);
+             }
+         }
++        crate::trap::post_trap_callback(tf, from_user);
+     } else {
+         panic!(
+             "Unknown trap {:?} @ {:#x}:\n{:#x?}",
+Index: modules/axhal/src/arch/x86_64/trap.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/x86_64/trap.rs b/modules/axhal/src/arch/x86_64/trap.rs
+--- a/modules/axhal/src/arch/x86_64/trap.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/arch/x86_64/trap.rs	(revision 5ea5a2b843285bab44138328976a33cd0dc513bc)
+@@ -31,6 +31,8 @@
+
+ #[unsafe(no_mangle)]
+ fn x86_trap_handler(tf: &mut TrapFrame) {
++    #[cfg(feature = "uspace")]
++    super::tls::switch_to_kernel_fs_base(tf);
+     match tf.vector as u8 {
+         PAGE_FAULT_VECTOR => handle_page_fault(tf),
+         BREAKPOINT_VECTOR => debug!("#BP @ {:#x} ", tf.rip),
+@@ -41,7 +43,7 @@
+             );
+         }
+         #[cfg(feature = "uspace")]
+-        LEGACY_SYSCALL_VECTOR => super::syscall::x86_syscall_handler(tf),
++        LEGACY_SYSCALL_VECTOR => super::syscall::handle_syscall(tf),
+         IRQ_VECTOR_START..=IRQ_VECTOR_END => {
+             handle_trap!(IRQ, tf.vector as _);
+         }
+@@ -56,6 +58,9 @@
+             );
+         }
+     }
++    crate::trap::post_trap_callback(tf, tf.is_user());
++    #[cfg(feature = "uspace")]
++    super::tls::switch_to_user_fs_base(tf);
+ }
+
+ fn vec_to_str(vec: u64) -> &'static str {
+Index: modules/axhal/src/trap.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/trap.rs b/modules/axhal/src/trap.rs
+--- a/modules/axhal/src/trap.rs	(revision 0dd31ef9d1dd0ead827e7665765291be47990b40)
++++ b/modules/axhal/src/trap.rs	(revision a9345aa1bc4bc17553a8af6ee56d2a8b4bdea2e6)
+@@ -4,11 +4,10 @@
+ use memory_addr::VirtAddr;
+ use page_table_entry::MappingFlags;
+
+-#[cfg(feature = "uspace")]
++pub use linkme::distributed_slice as register_trap_handler;
++
+ use crate::arch::TrapFrame;
+
+-pub use linkme::distributed_slice as register_trap_handler;
+-
+ /// A slice of IRQ handler functions.
+ #[def_trap_handler]
+ pub static IRQ: [fn(usize) -> bool];
+@@ -20,7 +19,11 @@
+ /// A slice of syscall handler functions.
+ #[cfg(feature = "uspace")]
+ #[def_trap_handler]
+-pub static SYSCALL: [fn(&TrapFrame, usize) -> isize];
++pub static SYSCALL: [fn(&mut TrapFrame, usize) -> isize];
++
++/// A slice of callbacks to be invoked after a trap.
++#[linkme::distributed_slice]
++pub static POST_TRAP: [fn(&mut TrapFrame, bool)];
+
+ #[allow(unused_macros)]
+ macro_rules! handle_trap {
+@@ -38,8 +41,15 @@
+     }}
+ }
+
++#[unsafe(no_mangle)]
++pub(crate) fn post_trap_callback(tf: &mut TrapFrame, from_user: bool) {
++    for cb in crate::trap::POST_TRAP.iter() {
++        cb(tf, from_user);
++    }
++}
++
+ /// Call the external syscall handler.
+ #[cfg(feature = "uspace")]
+-pub(crate) fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
++pub(crate) fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
+     SYSCALL[0](tf, syscall_num)
+ }
+Index: modules/axhal/src/arch/x86_64/context.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/x86_64/context.rs b/modules/axhal/src/arch/x86_64/context.rs
+--- a/modules/axhal/src/arch/x86_64/context.rs	(revision a9345aa1bc4bc17553a8af6ee56d2a8b4bdea2e6)
++++ b/modules/axhal/src/arch/x86_64/context.rs	(revision ccbd1d0b03b5e9928fe60a8c967b7a31b7cde921)
+@@ -140,6 +140,12 @@
+             core::ptr::write(self.rsp as *mut usize, addr);
+         }
+     }
++
++    /// Sets the TLS (thread-local storage) register, if containing such a register.
++    #[must_use]
++    pub const fn try_set_tls(&mut self, _tls: usize) -> bool {
++        false
++    }
+ }
+
+ /// Context to enter user space.
+Index: modules/axtask/src/wait_queue.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axtask/src/wait_queue.rs b/modules/axtask/src/wait_queue.rs
+--- a/modules/axtask/src/wait_queue.rs	(revision bec3096445b538d1b543244c79f8d8ced97ebc09)
++++ b/modules/axtask/src/wait_queue.rs	(revision c8b39a8ea77b99bffdb74457c460ed17a7a36157)
+@@ -1,5 +1,6 @@
+ use alloc::collections::VecDeque;
+ use alloc::sync::Arc;
++use alloc::vec::Vec;
+
+ use kernel_guard::{NoOp, NoPreemptIrqSave};
+ use kspin::{SpinNoIrq, SpinNoIrqGuard};
+@@ -201,6 +202,20 @@
+             false
+         }
+     }
++
++    /// Requeues at most `count` tasks in the wait queue to the target wait queue.
++    ///
++    /// Returns the number of tasks requeued.
++    pub fn requeue(&self, count: usize, target: &WaitQueue) -> usize {
++        let tasks: Vec<_> = {
++            let mut wq = self.queue.lock();
++            let count = count.min(wq.len());
++            wq.drain(..count).collect()
++        };
++        let mut wq = target.queue.lock();
++        wq.extend(tasks);
++        count
++    }
+ }
+
+ fn unblock_one_task(task: AxTaskRef, resched: bool) {
+Index: modules/axhal/src/arch/aarch64/context.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/aarch64/context.rs b/modules/axhal/src/arch/aarch64/context.rs
+--- a/modules/axhal/src/arch/aarch64/context.rs	(revision 244dd82e8124f9edde176256c80d54d4395d02e4)
++++ b/modules/axhal/src/arch/aarch64/context.rs	(revision ccbd1d0b03b5e9928fe60a8c967b7a31b7cde921)
+@@ -110,6 +110,12 @@
+     pub const fn set_ra(&mut self, lr: usize) {
+         self.r[30] = lr as _;
+     }
++
++    /// Sets the TLS (thread-local storage) register, if containing such a register.
++    #[must_use]
++    pub const fn try_set_tls(&mut self, _tls: usize) -> bool {
++        false
++    }
+ }
+
+ /// Context to enter user space.
+Index: modules/axhal/src/arch/loongarch64/context.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/loongarch64/context.rs b/modules/axhal/src/arch/loongarch64/context.rs
+--- a/modules/axhal/src/arch/loongarch64/context.rs	(revision 244dd82e8124f9edde176256c80d54d4395d02e4)
++++ b/modules/axhal/src/arch/loongarch64/context.rs	(revision ccbd1d0b03b5e9928fe60a8c967b7a31b7cde921)
+@@ -147,6 +147,13 @@
+     pub const fn set_ra(&mut self, ra: usize) {
+         self.regs.ra = ra;
+     }
++
++    /// Sets the TLS (thread-local storage) register, if containing such a register.
++    #[must_use]
++    pub const fn try_set_tls(&mut self, tls: usize) -> bool {
++        self.regs.tp = tls;
++        true
++    }
+ }
+
+ /// Context to enter user space.
+Index: modules/axhal/src/arch/x86_64/syscall.rs
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/modules/axhal/src/arch/x86_64/syscall.rs b/modules/axhal/src/arch/x86_64/syscall.rs
+--- a/modules/axhal/src/arch/x86_64/syscall.rs	(revision c85e2305d1327a7d39740f4a1636f30fe20a4d56)
++++ b/modules/axhal/src/arch/x86_64/syscall.rs	(revision 5ea5a2b843285bab44138328976a33cd0dc513bc)
+@@ -12,13 +12,21 @@
+ core::arch::global_asm!(
+     include_str!("syscall.S"),
+     tss_rsp0_offset = const core::mem::offset_of!(TaskStateSegment, privilege_stack_table),
++    ucode64 = const GdtStruct::UCODE64_SELECTOR.0,
+ );
+
+-#[unsafe(no_mangle)]
+-pub(super) fn x86_syscall_handler(tf: &mut TrapFrame) {
++pub(super) fn handle_syscall(tf: &mut TrapFrame) {
+     tf.rax = crate::trap::handle_syscall(tf, tf.rax as usize) as u64;
+ }
+
++#[unsafe(no_mangle)]
++fn x86_syscall_handler(tf: &mut TrapFrame) {
++    super::tls::switch_to_kernel_fs_base(tf);
++    handle_syscall(tf);
++    crate::trap::post_trap_callback(tf, true);
++    super::tls::switch_to_user_fs_base(tf);
++}
++
+ /// Initializes syscall support and setups the syscall handler.
+ pub fn init_syscall() {
+     unsafe extern "C" {
