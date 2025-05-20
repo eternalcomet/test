@@ -1,13 +1,19 @@
-use core::ffi::{c_char, c_void};
-
-use axerrno::{LinuxError, LinuxResult};
-use axfs::fops::DirEntry;
-use macro_rules_attribute::apply;
-
+use crate::imp::utils::path::resolve_path_with_parent;
+use crate::ptr::UserInPtr;
 use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
     syscall_instrument,
 };
+use arceos_posix_api::ctypes::timespec;
+use arceos_posix_api::{File, get_file_like};
+use axerrno::{LinuxError, LinuxResult};
+use axfs::fops::DirEntry;
+use axhal::time::{TimeValue, wall_time};
+use core::ffi::{c_char, c_void};
+use core::time::Duration;
+use linux_raw_sys::general::{AT_EMPTY_PATH, UTIME_NOW, UTIME_OMIT};
+use macro_rules_attribute::apply;
+use syscall_trace::syscall_trace;
 
 /// The ioctl() system call manipulates the underlying device parameters
 /// of special files.
@@ -179,4 +185,48 @@ pub fn sys_linkat(
 
 pub fn sys_getcwd(buf: UserPtr<c_char>, size: usize) -> LinuxResult<isize> {
     Ok(arceos_posix_api::sys_getcwd(buf.get_as_null_terminated()?.as_ptr() as _, size) as _)
+}
+
+#[syscall_trace]
+pub fn sys_utimensat(
+    dir_fd: i32,
+    path: UserInPtr<c_char>,
+    times: UserInPtr<timespec>,
+    flags: u32,
+) -> LinuxResult<isize> {
+    pub fn timevalue_to_timespec(tv: TimeValue) -> timespec {
+        timespec {
+            tv_sec: tv.as_secs() as _,
+            tv_nsec: tv.subsec_nanos() as _,
+        }
+    }
+    fn utime_to_duration(time: &timespec) -> Option<timespec> {
+        match time.tv_nsec {
+            val if val == UTIME_OMIT as _ => None,
+            val if val == UTIME_NOW as _ => Some(timevalue_to_timespec(wall_time())),
+            _ => Some(time.clone()),
+        }
+    }
+    let times = times.get_as_slice(2)?;
+    let atime = utime_to_duration(&times[0]);
+    let mtime = utime_to_duration(&times[1]);
+    if atime.is_none() && mtime.is_none() {
+        return Ok(0);
+    }
+    if path.is_null() {
+        let file = get_file_like(dir_fd)?.into_any();
+        let file = file.downcast_ref::<File>();
+        let file = file.ok_or(LinuxError::ENFILE)?;
+        if let Some(atime) = atime {
+            *file.atime.lock() = atime.into();
+        }
+        if let Some(mtime) = mtime {
+            *file.mtime.lock() = mtime.into();
+        }
+    } else {
+        let path = path.get_as_str()?;
+        let file_path = resolve_path_with_parent(dir_fd, path)?;
+        warn!("[sys_utimensat] not support path: {file_path:?}");
+    }
+    Ok(0)
 }

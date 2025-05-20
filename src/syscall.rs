@@ -310,6 +310,8 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         Sysno::truncate => sys_truncate(tf.arg0().into(), tf.arg1() as _),
         Sysno::ftruncate => sys_ftruncate(tf.arg0() as _, tf.arg1() as _),
         Sysno::syslog => stub_bypass(syscall_num),
+        Sysno::get_robust_list => stub_bypass(syscall_num),
+        Sysno::set_robust_list => stub_bypass(syscall_num),
         _ => stub_unimplemented(syscall_num),
     };
     let ans = result.unwrap_or_else(|err| -err.code() as _);
