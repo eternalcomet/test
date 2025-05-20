@@ -207,6 +207,9 @@ pub fn sys_utimensat(
             _ => Some(time.clone()),
         }
     }
+    if times.is_null() {
+        return Ok(0);
+    }
     let times = times.get_as_slice(2)?;
     let atime = utime_to_duration(&times[0]);
     let mtime = utime_to_duration(&times[1]);
