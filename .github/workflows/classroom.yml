@@ -54,7 +54,7 @@ jobs:
           echo 'start---aarch64' > aarch64_output.txt
           touch x86_64_output.txt
           echo 'start---x86_64' > x86_64_output.txt
-          make oscomp_run ARCH=loongarch64 BLK=y NET=y ACCEL=n FEATURES=fp_simd,lwext4_rs | tee output_single.txt || true
+          make oscomp_run ARCH=aarch64 BLK=y NET=y ACCEL=n FEATURES=fp_simd,lwext4_rs | tee output_single.txt || true
           cat output_single.txt >> riscv64_output.txt
           echo 'end---riscv64' >> riscv64_output.txt
           cat output_single.txt >> loongarch64_output.txt
