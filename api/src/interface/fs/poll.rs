@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::time::{MICROS_PER_SEC, NANOS_PER_MICROS, NANOS_PER_SEC};
 use bit_field::BitArray;
-use core::cmp::{max, min};
+use core::cmp::min;
 use core::ffi::{c_int, c_ulong};
 use linux_raw_sys::general::{timespec, timeval};
 use syscall_trace::syscall_trace;

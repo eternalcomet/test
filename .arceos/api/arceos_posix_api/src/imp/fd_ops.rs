@@ -1,8 +1,8 @@
-use crate::ctypes;
-use crate::ctypes::{FD_CLOEXEC, O_NONBLOCK, timespec};
+use crate::ctypes::{FD_CLOEXEC, O_NONBLOCK, O_RDWR, timespec};
 use crate::imp::fd_ops::poll_flags::*;
 use crate::imp::pipe::Pipe;
 use crate::imp::stdio::{stdin, stdout};
+use crate::{File, ctypes};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use axerrno::{LinuxError, LinuxResult};
@@ -11,7 +11,6 @@ use axio::PollState;
 use axns::{ResArc, def_resource};
 use axtask::yield_now;
 use core::ffi::{c_int, c_void};
-use core::mem::replace;
 use core::ops::Deref;
 use core::ptr::drop_in_place;
 use flatten_objects::FlattenObjects;
@@ -19,11 +18,42 @@ use spin::RwLock;
 
 pub const AX_FILE_LIMIT: usize = 1024;
 
+/// File status
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FileStatus {
+    /// ID of device containing file
+    pub dev: usize,
+    /// inode number
+    pub inode: usize,
+    /// file type and mode
+    pub mode: u32,
+    /// number of hard links
+    pub n_link: usize,
+    /// user ID of owner
+    pub uid: u32,
+    /// group ID of owner
+    pub gid: u32,
+    /// device ID (if special file)
+    pub rdev: usize,
+    /// total size, in bytes
+    pub size: isize,
+    /// Block size for filesystem I/O
+    pub block_size: isize,
+    /// number of blocks allocated
+    pub n_blocks: isize,
+    /// time of last access
+    pub access_time: TimeSpec,
+    /// time of last modification
+    pub modify_time: TimeSpec,
+    /// time of last status change
+    pub change_time: TimeSpec,
+}
+
 #[allow(dead_code)]
 pub trait FileLike: Send + Sync {
     fn read(&self, buf: &mut [u8]) -> LinuxResult<usize>;
     fn write(&self, buf: &[u8]) -> LinuxResult<usize>;
-    fn stat(&self) -> LinuxResult<ctypes::stat>;
+    fn stat(&self) -> LinuxResult<FileStatus>;
     fn into_any(self: Arc<Self>) -> Arc<dyn core::any::Any + Send + Sync>;
     fn poll(&self) -> LinuxResult<PollState>;
     fn set_nonblocking(&self, nonblocking: bool) -> LinuxResult;
@@ -71,7 +101,7 @@ pub fn close_file_like(fd: c_int) -> LinuxResult {
 
 pub fn close_all_file_like() {
     let ref_count = FD_TABLE.ref_count();
-    error!("ref count for FD_TABLE is {}", ref_count);
+    debug!("ref count for FD_TABLE is {}", ref_count);
 
     if ref_count == 1 {
         let mut fd_table = FD_TABLE.write();
@@ -156,8 +186,14 @@ pub fn sys_fcntl(fd: c_int, cmd: c_int, arg: usize) -> c_int {
                 Ok(FD_CLOEXEC as _)
             }
             ctypes::F_GETFL => {
-                warn!("unsupported fcntl parameters: F_GETFL, returning O_NONBLOCK");
-                Ok(O_NONBLOCK as _)
+                let file = get_file_like(fd)?.into_any();
+                if let Some(_) = file.downcast_ref::<File>() {
+                    warn!("unsupported fcntl parameters: F_GETFL, returning O_RDWR");
+                    Ok(O_RDWR as _)
+                } else {
+                    warn!("unsupported fcntl parameters: F_GETFL, returning O_NONBLOCK");
+                    Ok(O_NONBLOCK as _)
+                }
             }
             _ => {
                 warn!("unsupported fcntl parameters: cmd {}", cmd);
@@ -325,13 +361,14 @@ pub struct PollFd {
 
 /// Nanosecond-precision timeout specification, equivalent to C's `struct timespec`.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Time in seconds and nanoseconds
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[repr(C)]
 pub struct TimeSpec {
-    /// Seconds component.
-    pub tv_sec: i64,
-
-    /// Nanoseconds component (0 to 999,999,999 inclusive).
-    pub tv_nsec: i64,
+    /// seconds
+    pub seconds: isize,
+    /// nanoseconds in range [0, 999_999_999]
+    pub nanoseconds: isize,
 }
 
 #[allow(dead_code)]

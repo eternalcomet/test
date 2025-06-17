@@ -3,7 +3,9 @@ use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
 use bitflags::bitflags;
-use linux_raw_sys::general::{RENAME_EXCHANGE, RENAME_NOREPLACE, RENAME_WHITEOUT};
+use linux_raw_sys::general::{
+    R_OK, RENAME_EXCHANGE, RENAME_NOREPLACE, RENAME_WHITEOUT, W_OK, X_OK,
+};
 
 bitflags! {
     #[derive(Debug)]
@@ -82,4 +84,13 @@ pub fn sys_unlink_impl(dir_fd: i32, path: &str, flags: UnlinkFlags) -> LinuxResu
         axfs::api::remove_file(&path)?;
     }
     Ok(0)
+}
+
+bitflags! {
+    #[derive(Debug)]
+    pub struct AccessFlags: u32 {
+        const R_OK = R_OK;
+        const W_OK = W_OK;
+        const X_OK = X_OK;
+    }
 }

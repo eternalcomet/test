@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use axerrno::{AxError, LinuxResult};
-use axhal::arch::{TrapFrame};
+use axhal::arch::TrapFrame;
 use axtask::current;
 use core::default::Default;
 use starry_core::mm;
@@ -14,15 +14,9 @@ pub fn sys_execve_impl(
     args: Vec<String>,
     envs: Vec<String>,
 ) -> LinuxResult<isize> {
-    use axalloc::global_allocator;
-    let allocator = global_allocator();
-    error!(
-        "memory statistic: used: [{} KiB, {} pages], available: [{} KiB, {} pages]",
-        allocator.used_bytes() / 1024,
-        allocator.used_pages(),
-        allocator.available_bytes() / 1024,
-        allocator.available_pages()
-    );
+    // we must check if the program exists before unmapping the address space
+    let _ = axfs::api::File::open(&args[0])?;
+
     if current_process().get_threads().len() > 1 {
         // TODO: kill other threads except leader thread
         // because we need to unmap the address space
@@ -34,6 +28,10 @@ pub fn sys_execve_impl(
     let process_data = current_process_data();
 
     // clear address space
+    // TODO: create a new address space instead of clearing the current one
+    // because the current address space may be shared with other processes/threads
+    // e.g. VFORK
+    // and we can easily return to the old address space if execve fails
     let addr_space = &process_data.addr_space;
     let mut addr_space = addr_space.lock();
     addr_space.unmap_user_areas()?;
@@ -43,6 +41,7 @@ pub fn sys_execve_impl(
 
     // load executable binary
     let (entry_point, user_stack_base) =
+        // TODO: 这里面的错误码可能需要更细化，上面检查过了不存在的情况，这里应该不会是这个问题了
         mm::load_user_app(&mut addr_space, &args, &envs).map_err(|_| {
             error!("Failed to load app {}", path);
             AxError::NotFound
@@ -60,6 +59,6 @@ pub fn sys_execve_impl(
     // new user context
     tf.set_ip(entry_point.as_usize());
     tf.set_sp(user_stack_base.as_usize());
-    
+
     Ok(0)
 }

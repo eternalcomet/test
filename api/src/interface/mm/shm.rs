@@ -1,7 +1,6 @@
-use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
 use axhal::mem::virt_to_phys;
-use axhal::paging::MappingFlags;
+use axhal::paging::{MappingFlags, PageSize};
 use bitflags::bitflags;
 use core::ffi::{c_int, c_ulong};
 use memory_addr::{PAGE_SIZE_4K, VirtAddr, VirtAddrRange, align_down_4k, is_aligned_4k};
@@ -65,6 +64,7 @@ pub fn sys_shmat(shm_id: c_int, shm_addr: c_ulong, shm_flag: c_int) -> LinuxResu
             addr_space.base(),
             size,
             VirtAddrRange::new(addr_space.base(), addr_space.end()),
+            PageSize::Size4K,
         )
     } else {
         if flags.contains(ShmFlags::SHM_RND) {
@@ -73,6 +73,7 @@ pub fn sys_shmat(shm_id: c_int, shm_addr: c_ulong, shm_flag: c_int) -> LinuxResu
                 VirtAddr::from(addr),
                 size,
                 VirtAddrRange::new(addr_space.base(), addr_space.end()),
+                PageSize::Size4K,
             )
         } else {
             if !is_aligned_4k(shm_addr as _) {
@@ -91,7 +92,7 @@ pub fn sys_shmat(shm_id: c_int, shm_addr: c_ulong, shm_flag: c_int) -> LinuxResu
         permission |= MappingFlags::EXECUTE;
     }
     let paddr = virt_to_phys(VirtAddr::from(shared_memory.addr));
-    addr_space.map_linear(addr, paddr, size, permission)?;
+    addr_space.map_linear(addr, paddr, size, permission, PageSize::Size4K)?;
     // add to process data
     let process_data = current_process_data();
     let mut process_shared_memory = process_data.shared_memory.lock();

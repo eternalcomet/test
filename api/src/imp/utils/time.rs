@@ -1,9 +1,7 @@
-use crate::imp::fs::Kstat;
-use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
+use crate::ptr::{PtrWrapper, UserPtr};
 use arceos_posix_api::{self as api, ctypes::timeval};
 use axerrno::LinuxResult;
 use axhal::time::{monotonic_time_nanos, nanos_to_ticks};
-use core::ffi::c_char;
 use starry_core::{ctypes::Tms, task::time_stat_output};
 
 pub fn sys_clock_gettime(clock_id: i32, tp: UserPtr<api::ctypes::timespec>) -> LinuxResult<isize> {

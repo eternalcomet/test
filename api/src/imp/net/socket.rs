@@ -1,9 +1,9 @@
 use alloc::{sync::Arc, vec, vec::Vec};
 use arceos_posix_api::ctypes::{
-    AF_INET, IPPROTO_TCP, IPPROTO_UDP, MAXADDRS, SOCK_STREAM, addrinfo, aibuf, aibuf_sa, in_addr,
-    size_t, sockaddr, sockaddr_in, socklen_t, stat,
+    AF_INET, IPPROTO_TCP, IPPROTO_UDP, MAXADDRS, SOCK_STREAM, addrinfo, aibuf, aibuf_sa, size_t,
+    sockaddr, sockaddr_in, socklen_t,
 };
-use arceos_posix_api::{FileLike, add_file_like, get_file_like};
+use arceos_posix_api::{FileLike, FileStatus, add_file_like, get_file_like};
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::mem::size_of;
 use core::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -191,10 +191,10 @@ impl FileLike for Socket {
         self.send(buf)
     }
 
-    fn stat(&self) -> LinuxResult<stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         // TODO: implement socket stat
         let _mode = 0o140000 | 0o777u32; // S_IFSOCK | rwxrwxrwx
-        Ok(stat::default())
+        Ok(FileStatus::default())
     }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn core::any::Any + Send + Sync> {

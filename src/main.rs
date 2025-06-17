@@ -33,29 +33,4 @@ fn main() {
 
     let exit_code = run_user_app(&args, &envs);
     info!("[task manager] Shell exited with code: {:?}", exit_code);
-    // for testcase in testcases {
-    //     let testcase = testcase.trim();
-    //     if testcase.is_empty() {
-    //         continue;
-    //     }
-    //     // sh mode
-    //     let args = vec!["/musl/busybox", "sh", "-c", testcase];
-    //     // direct mode
-    //     // let args = testcase.split(" ");
-    //     let args: Vec<String> = args.into_iter().map(String::from).collect();
-    //
-    //     info!("[task manager] Running user task: {}", testcase);
-    //
-    //     let envs = vec![
-    //         "PATH=/bin".to_string(),
-    //         "LD_LIBRARY_PATH=/lib:/lib64".to_string(),
-    //         // "LD_DEBUG=all".to_string(),
-    //     ];
-    //
-    //     let exit_code = run_user_app(&args, &envs);
-    //     info!(
-    //         "[task manager] User task {} exited with code: {:?}",
-    //         testcase, exit_code
-    //     );
-    // }
 }

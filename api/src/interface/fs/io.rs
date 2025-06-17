@@ -14,7 +14,7 @@ pub fn sys_truncate(path: UserInPtr<c_char>, length: c_long) -> LinuxResult<isiz
 
     // open file
     let mut options = OpenOptions::new();
-    options.truncate(true);
+    options.write(true);
 
     let file = fops::File::open(path, &options)?;
     sys_truncate_impl(&file, length as _)

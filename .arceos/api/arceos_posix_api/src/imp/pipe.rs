@@ -6,7 +6,7 @@ use axio::PollState;
 use axsync::Mutex;
 
 use super::fd_ops::{FileLike, add_file_like, close_file_like};
-use crate::ctypes;
+use crate::FileStatus;
 
 #[derive(Copy, Clone, PartialEq)]
 enum RingBufferStatus {
@@ -15,7 +15,7 @@ enum RingBufferStatus {
     Normal,
 }
 
-const RING_BUFFER_SIZE: usize = 256;
+const RING_BUFFER_SIZE: usize = 1024;
 
 pub struct PipeRingBuffer {
     arr: [u8; RING_BUFFER_SIZE],
@@ -162,15 +162,15 @@ impl FileLike for Pipe {
         }
     }
 
-    fn stat(&self) -> LinuxResult<ctypes::stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         let st_mode = 0o10000 | 0o600u32; // S_IFIFO | rw-------
-        Ok(ctypes::stat {
-            st_ino: 1,
-            st_nlink: 1,
-            st_mode,
-            st_uid: 1000,
-            st_gid: 1000,
-            st_blksize: 4096,
+        Ok(FileStatus {
+            inode: 1,
+            n_link: 1,
+            mode: st_mode,
+            uid: 1000,
+            gid: 1000,
+            block_size: 4096,
             ..Default::default()
         })
     }
@@ -210,6 +210,10 @@ pub fn sys_pipe(fds: &mut [c_int]) -> c_int {
 
         fds[0] = read_fd as c_int;
         fds[1] = write_fd as c_int;
+        info!(
+            "[sys_pipe] created pipe: read_fd = {}, write_fd = {}",
+            fds[0], fds[1]
+        );
 
         Ok(0)
     })

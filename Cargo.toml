@@ -33,7 +33,7 @@ axhal = { git = "https://github.com/oscomp/arceos.git", features = ["uspace"] }
 axlog = { git = "https://github.com/oscomp/arceos.git" }
 axnet = { git = "https://github.com/oscomp/arceos.git" }
 axalloc = { git = "https://github.com/oscomp/arceos.git", features = ["page-alloc-4g"] }
-axmm = { git = "https://github.com/oscomp/arceos.git" }
+axmm = { git = "https://github.com/oscomp/arceos.git" , features = [] }
 axns = { git = "https://github.com/oscomp/arceos.git", features = [
     "thread-local",
 ] }
@@ -45,7 +45,7 @@ axio = "0.1"
 axerrno = "0.1"
 bitflags = "2.6"
 linkme = "0.3"
-memory_addr = "0.3"
+memory_addr = "0.4"
 
 starry-core = { path = "./core" }
 starry-api = { path = "./api" }
@@ -77,6 +77,7 @@ axhal.workspace = true
 axlog.workspace = true
 axtask.workspace = true
 axalloc.workspace = true
+axsync.workspace = true
 
 axerrno.workspace = true
 linkme.workspace = true
@@ -88,8 +89,8 @@ arceos_posix_api.workspace = true
 syscalls = { git = "https://github.com/jasonwhite/syscalls.git", rev = "92624de", default-features = false }
 
 [patch.crates-io]
-page_table_multiarch = { git = "https://github.com/Mivik/page_table_multiarch.git" }
-page_table_entry = { git = "https://github.com/Mivik/page_table_multiarch.git" }
+page_table_multiarch = { git = "https://github.com/eternalcomet/page_table_multiarch.git" }
+page_table_entry = { git = "https://github.com/eternalcomet/page_table_multiarch.git" }
 
 [profile.dev]
 debug-assertions = false

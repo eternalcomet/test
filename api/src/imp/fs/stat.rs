@@ -1,8 +1,8 @@
+use arceos_posix_api::TimeSpec;
 use axerrno::LinuxResult;
 use core::ffi::c_char;
 use macro_rules_attribute::apply;
 
-use crate::imp::fs::status::TimeSpec;
 use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
     syscall_instrument,

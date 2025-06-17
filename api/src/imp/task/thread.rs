@@ -1,12 +1,7 @@
 use crate::ptr::UserInPtr;
-use crate::{
-    ptr::{PtrWrapper, UserPtr},
-    syscall_instrument,
-};
+use crate::ptr::{PtrWrapper};
 use axerrno::LinuxResult;
-use axhal::arch::TrapFrame;
 use core::sync::atomic::Ordering;
-use macro_rules_attribute::apply;
 use num_enum::TryFromPrimitive;
 use starry_core::task::{current_process, current_thread, current_thread_data};
 use syscall_trace::syscall_trace;
@@ -61,7 +56,6 @@ pub fn sys_set_tid_address(tid_ptd: UserInPtr<i32>) -> LinuxResult<isize> {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[apply(syscall_instrument)]
 pub fn sys_arch_prctl(code: i32, addr: UserPtr<u64>, tf: &mut TrapFrame) -> LinuxResult<isize> {
     use axerrno::LinuxError;
     debug!(
@@ -100,6 +94,3 @@ pub fn sys_arch_prctl(code: i32, addr: UserPtr<u64>, tf: &mut TrapFrame) -> Linu
         ArchPrctlCode::SetCpuid => Err(LinuxError::ENODEV),
     }
 }
-
-// TODO: [stub] The method signature is not correct yet
-

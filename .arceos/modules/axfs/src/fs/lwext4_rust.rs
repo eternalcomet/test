@@ -1,5 +1,4 @@
 use crate::alloc::string::String;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use axerrno::AxError;
@@ -312,7 +311,7 @@ impl VfsNodeOps for FileWrapper {
         let mut file = self.0.lock();
         let path = file.get_path();
         let path = path.to_str().unwrap();
-        file.file_open(path, O_RDWR | O_CREAT | O_TRUNC)
+        file.file_open(path, O_WRONLY)
             .map_err(|e| <i32 as TryInto<AxError>>::try_into(e).unwrap())?;
 
         let t = file.file_truncate(size);

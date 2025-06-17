@@ -1,8 +1,13 @@
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use axalloc::global_allocator;
 use axerrno::{LinuxError, LinuxResult};
+use axhal::time::monotonic_time_nanos;
 use axhal::{
     arch::TrapFrame,
     trap::{SYSCALL, register_trap_handler},
 };
+use axsync::Mutex;
 use starry_api::imp::fs::*;
 use starry_api::imp::mm::*;
 use starry_api::imp::net::socket::*;
@@ -18,13 +23,17 @@ use starry_api::interface::mm::shm::*;
 use starry_api::interface::task::resource::*;
 use starry_api::interface::task::*;
 use starry_api::interface::user::identity::*;
+use starry_api::interface::utility::random::*;
 use starry_core::task::{time_stat_from_kernel_to_user, time_stat_from_user_to_kernel};
 use syscalls::Sysno;
+
+static TIME_COSTS: Mutex<BTreeMap<Sysno, u64>> = Mutex::new(BTreeMap::new());
 
 #[register_trap_handler(SYSCALL)]
 fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
     info!("[syscall] <{:?}> begin", Sysno::from(syscall_num as u32));
     time_stat_from_user_to_kernel();
+    let time_start = monotonic_time_nanos();
     let result: LinuxResult<isize> = match Sysno::from(syscall_num as u32) {
         Sysno::read => sys_read(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         Sysno::write => sys_write(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
@@ -137,9 +146,16 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
             tf.arg4().into(),
             tf.arg5() as _,
         ),
+        Sysno::fchmodat => sys_fchmodat(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2() as _,
+            tf.arg3() as _,
+        ),
         Sysno::getegid => sys_getegid(),
         Sysno::geteuid => sys_geteuid(),
         Sysno::getgid => sys_getgid(),
+        Sysno::getrandom => sys_getrandom(tf.arg0().into(), tf.arg1() as _, tf.arg2() as _),
         Sysno::gettid => sys_gettid(),
         Sysno::getuid => sys_getuid(),
         Sysno::kill => sys_kill(tf.arg0() as _, tf.arg1() as _),
@@ -187,6 +203,12 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         ),
         Sysno::setrlimit => sys_setrlimit(tf.arg0() as _, tf.arg1().into()),
         Sysno::getrlimit => sys_getrlimit(tf.arg0() as _, tf.arg1().into()),
+        Sysno::readlinkat => sys_readlinkat(
+            tf.arg0() as _,
+            tf.arg1().into(),
+            tf.arg2().into(),
+            tf.arg3() as _,
+        ),
         Sysno::readv => sys_readv(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         #[cfg(target_arch = "x86_64")]
         Sysno::rename => sys_rename(tf.arg0().into(), tf.arg1().into()),
@@ -303,8 +325,8 @@ fn handle_syscall(tf: &mut TrapFrame, syscall_num: usize) -> isize {
         Sysno::accept => sys_accept(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
         Sysno::connect => sys_connect(tf.arg0() as _, tf.arg1() as _, tf.arg2() as _),
         #[cfg(target_arch = "x86_64")]
-        Sysno::access => stub_bypass(syscall_num),
-        Sysno::faccessat => stub_bypass(syscall_num),
+        Sysno::access => stub_bypass(syscall_num), // TODO: implement access
+        Sysno::faccessat => sys_faccessat(tf.arg0() as _, tf.arg1().into(), tf.arg2() as _),
         Sysno::sync => stub_bypass(syscall_num),
         Sysno::fsync => stub_bypass(syscall_num),
         Sysno::truncate => sys_truncate(tf.arg0().into(), tf.arg1() as _),

@@ -2,16 +2,14 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::OpenOptions;
-use axio::{PollState, SeekFrom};
+use axio::PollState;
 use axsync::Mutex;
 use core::ffi::{c_char, c_int};
 
-use super::fd_ops::{FileLike, get_file_like};
-use crate::AT_FDCWD;
+use super::fd_ops::FileLike;
+use crate::{AT_FDCWD, FileStatus, TimeSpec};
 use crate::{ctypes, utils::char_ptr_to_str};
 
-// TODO: remove it to `utils`
-use crate::ctypes::timespec;
 use core::hash::Hasher;
 
 struct SimpleHasher(i32);
@@ -36,8 +34,8 @@ pub fn hash_string(s: &str) -> u64 {
 pub struct File {
     inner: Mutex<axfs::fops::File>,
     path: String,
-    pub atime: Mutex<timespec>,
-    pub mtime: Mutex<timespec>,
+    pub atime: Mutex<TimeSpec>,
+    pub mtime: Mutex<TimeSpec>,
 }
 
 impl File {
@@ -45,8 +43,8 @@ impl File {
         Self {
             inner: Mutex::new(inner),
             path: path.to_string(),
-            atime: Mutex::new(timespec::default()),
-            mtime: Mutex::new(timespec::default()),
+            atime: Mutex::new(TimeSpec::default()),
+            mtime: Mutex::new(TimeSpec::default()),
         }
     }
 
@@ -81,24 +79,24 @@ impl FileLike for File {
         Ok(self.inner.lock().write(buf)?)
     }
 
-    fn stat(&self) -> LinuxResult<ctypes::stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         let metadata = self.inner.lock().get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;
         let st_mode = ((ty as u32) << 12) | perm;
         // TODO: true inode
         let fake_inode = hash_string(self.path());
-        Ok(ctypes::stat {
-            st_ino: fake_inode,
-            st_nlink: 1,
-            st_mode,
-            st_uid: 1000,
-            st_gid: 1000,
-            st_size: metadata.size() as _,
-            st_blocks: metadata.blocks() as _,
-            st_blksize: 512,
-            st_atime: *self.atime.lock(),
-            st_mtime: *self.mtime.lock(),
+        Ok(FileStatus {
+            inode: fake_inode as _,
+            n_link: 1,
+            mode: st_mode,
+            uid: 1000,
+            gid: 1000,
+            size: metadata.size() as _,
+            n_blocks: metadata.blocks() as _,
+            block_size: 512,
+            access_time: *self.atime.lock(),
+            modify_time: *self.mtime.lock(),
             ..Default::default()
         })
     }
@@ -238,113 +236,6 @@ where
     Directory::new(open_dir(filename, options).map_err(Into::into)?, filename).add_to_fd_table()
 }
 
-/// Set the position of the file indicated by `fd`.
-///
-/// Return its position after seek.
-pub fn sys_lseek(fd: c_int, offset: ctypes::off_t, whence: c_int) -> ctypes::off_t {
-    debug!("sys_lseek <= {} {} {}", fd, offset, whence);
-    syscall_body!(sys_lseek, {
-        let pos = match whence {
-            0 => SeekFrom::Start(offset as _),
-            1 => SeekFrom::Current(offset as _),
-            2 => SeekFrom::End(offset as _),
-            _ => return Err(LinuxError::EINVAL),
-        };
-        let off = File::from_fd(fd)?.inner.lock().seek(pos)?;
-        Ok(off)
-    })
-}
-
-/// Get the file metadata by `path` and write into `buf`.
-///
-/// Return 0 if success.
-pub unsafe fn sys_stat(path: *const c_char, buf: *mut ctypes::stat) -> c_int {
-    let path = char_ptr_to_str(path);
-    debug!("sys_stat <= {:?} {:#x}", path, buf as usize);
-    syscall_body!(sys_stat, {
-        let path = path?;
-        if buf.is_null() {
-            return Err(LinuxError::EFAULT);
-        }
-        let mut options = OpenOptions::new();
-        options.read(true);
-        if let Ok(file) = axfs::fops::File::open(path, &options) {
-            let st = File::new(file, path).stat()?;
-            unsafe { *buf = st };
-        } else if let Ok(dir) = axfs::fops::Directory::open_dir(path, &options) {
-            let st = Directory::new(dir, path).stat()?;
-            unsafe { *buf = st };
-        } else {
-            return Err(LinuxError::ENOENT);
-        }
-        Ok(0)
-    })
-}
-
-/// Get file metadata by `fd` and write into `buf`.
-///
-/// Return 0 if success.
-pub unsafe fn sys_fstat(fd: c_int, buf: *mut ctypes::stat) -> c_int {
-    debug!("sys_fstat <= {} {:#x}", fd, buf as usize);
-    syscall_body!(sys_fstat, {
-        if buf.is_null() {
-            return Err(LinuxError::EFAULT);
-        }
-
-        unsafe { *buf = get_file_like(fd)?.stat()? };
-        Ok(0)
-    })
-}
-
-/// Get the metadata of the symbolic link and write into `buf`.
-///
-/// Return 0 if success.
-pub unsafe fn sys_lstat(path: *const c_char, buf: *mut ctypes::stat) -> ctypes::ssize_t {
-    let path = char_ptr_to_str(path);
-    debug!("sys_lstat <= {:?} {:#x}", path, buf as usize);
-    syscall_body!(sys_lstat, {
-        if buf.is_null() {
-            return Err(LinuxError::EFAULT);
-        }
-        unsafe { *buf = Default::default() }; // TODO
-        Ok(0)
-    })
-}
-
-/// Get the path of the current directory.
-pub fn sys_getcwd(buf: *mut c_char, size: usize) -> *mut c_char {
-    debug!("sys_getcwd <= {:#x} {}", buf as usize, size);
-    syscall_body!(sys_getcwd, {
-        if buf.is_null() {
-            return Ok(core::ptr::null::<c_char>() as _);
-        }
-        let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, size as _) };
-        let cwd = axfs::api::current_dir()?;
-        let cwd = cwd.as_bytes();
-        if cwd.len() < size {
-            dst[..cwd.len()].copy_from_slice(cwd);
-            dst[cwd.len()] = 0;
-            Ok(buf)
-        } else {
-            Err(LinuxError::ERANGE)
-        }
-    })
-}
-
-/// Rename `old` to `new`
-/// If new exists, it is first removed.
-///
-/// Return 0 if the operation succeeds, otherwise return -1.
-pub fn sys_rename(old: *const c_char, new: *const c_char) -> c_int {
-    syscall_body!(sys_rename, {
-        let old_path = char_ptr_to_str(old)?;
-        let new_path = char_ptr_to_str(new)?;
-        debug!("sys_rename <= old: {:?}, new: {:?}", old_path, new_path);
-        axfs::api::rename(old_path, new_path)?;
-        Ok(0)
-    })
-}
-
 /// Directory wrapper for `axfs::fops::Directory`.
 pub struct Directory {
     inner: Mutex<axfs::fops::Directory>,
@@ -391,21 +282,21 @@ impl FileLike for Directory {
         Err(LinuxError::EBADF)
     }
 
-    fn stat(&self) -> LinuxResult<ctypes::stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         let metadata = self.inner.lock().get_attr()?;
         let ty = metadata.file_type() as u8;
         let perm = metadata.perm().bits() as u32;
         let st_mode = ((ty as u32) << 12) | perm;
         let fake_inode = hash_string(self.path());
-        Ok(ctypes::stat {
-            st_ino: fake_inode,
-            st_nlink: 2,
-            st_mode,
-            st_uid: 1000,
-            st_gid: 1000,
-            st_size: metadata.size() as _,
-            st_blocks: metadata.blocks() as _,
-            st_blksize: 4096,
+        Ok(FileStatus {
+            inode: fake_inode as usize,
+            n_link: 2,
+            mode: st_mode,
+            uid: 1000,
+            gid: 1000,
+            size: metadata.size() as _,
+            n_blocks: metadata.blocks() as _,
+            block_size: 4096,
             ..Default::default()
         })
     }

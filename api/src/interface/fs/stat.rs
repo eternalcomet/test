@@ -1,10 +1,12 @@
 use crate::imp::fs::FsStatxTimestamp;
-use crate::imp::fs::status::{FileStatus, TimeSpec, sys_stat_impl};
+use crate::imp::fs::status::{FileStatus, sys_stat_impl};
 use crate::ptr::{PtrWrapper, UserInPtr, UserOutPtr};
 use alloc::format;
 use arceos_posix_api::AT_FDCWD;
+use arceos_posix_api::TimeSpec;
 use axerrno::LinuxError;
 use axerrno::LinuxResult;
+use axhal::time::monotonic_time_nanos;
 use core::ffi::{c_char, c_int, c_long, c_uint, c_ulong};
 use syscall_trace::syscall_trace;
 
@@ -259,6 +261,7 @@ pub fn sys_fstatat(
     stat_buf: UserOutPtr<UserStat>,
     flags: c_int,
 ) -> LinuxResult<isize> {
+    error!("[fstatat] [{}] syscall start", monotonic_time_nanos());
     // get params
     let path = path.get_as_str().unwrap_or("");
     let stat_buf = stat_buf.get()?;
@@ -272,10 +275,14 @@ pub fn sys_fstatat(
         return Err(LinuxError::ENOENT);
     }
     let follow_symlinks = flags & AT_SYMLINK_NOFOLLOW == 0;
+    error!("[fstatat] [{}] impl start", monotonic_time_nanos());
     let file_status = sys_stat_impl(dir_fd, path, follow_symlinks)?;
+    error!("[fstatat] [{}] impl end", monotonic_time_nanos());
 
     // write result
     unsafe { stat_buf.write(file_status.into()) }
+    error!("[fstatat] [{}] write end", monotonic_time_nanos());
+
     Ok(0)
 }
 

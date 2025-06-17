@@ -3,6 +3,7 @@ use axerrno::AxResult;
 use axio::{BufReader, prelude::*};
 use axsync::Mutex;
 
+use crate::FileStatus;
 #[cfg(feature = "fd")]
 use {alloc::sync::Arc, axerrno::LinuxError, axerrno::LinuxResult, axio::PollState};
 
@@ -52,18 +53,40 @@ impl Write for StdoutRaw {
     }
 }
 
+#[derive(Default)]
+struct StdinBuffer {
+    buffer: [u8; 1],
+    available: bool,
+}
+
 pub struct Stdin {
     inner: &'static Mutex<BufReader<StdinRaw>>,
+    buffer: Mutex<StdinBuffer>,
 }
 
 impl Stdin {
     // Block until at least one byte is read.
     fn read_blocked(&self, buf: &mut [u8]) -> AxResult<usize> {
-        let read_len = self.inner.lock().read(buf)?;
-        if buf.is_empty() || read_len > 0 {
+        // make sure buf[0] is valid
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let mut read_len = 0;
+        let mut stdin_buffer = self.buffer.lock();
+        let buf = if stdin_buffer.available {
+            buf[0] = stdin_buffer.buffer[0];
+            read_len += 1;
+            stdin_buffer.available = false;
+            &mut buf[1..]
+        } else {
+            buf
+        };
+        drop(stdin_buffer);
+        read_len += self.inner.lock().read(buf)?;
+        if read_len > 0 {
             return Ok(read_len);
         }
-        // try again until we get something
+        // read_len == 0, try again until we get something
         loop {
             let read_len = self.inner.lock().read(buf)?;
             if read_len > 0 {
@@ -97,7 +120,10 @@ impl Write for Stdout {
 /// Constructs a new handle to the standard input of the current process.
 pub fn stdin() -> Stdin {
     static INSTANCE: Mutex<BufReader<StdinRaw>> = Mutex::new(BufReader::new(StdinRaw));
-    Stdin { inner: &INSTANCE }
+    Stdin {
+        inner: &INSTANCE,
+        buffer: Default::default(),
+    }
 }
 
 /// Constructs a new handle to the standard output of the current process.
@@ -116,12 +142,12 @@ impl super::fd_ops::FileLike for Stdin {
         Err(LinuxError::EPERM)
     }
 
-    fn stat(&self) -> LinuxResult<crate::ctypes::stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         let st_mode = 0o20000 | 0o440u32; // S_IFCHR | r--r-----
-        Ok(crate::ctypes::stat {
-            st_ino: 1,
-            st_nlink: 1,
-            st_mode,
+        Ok(FileStatus {
+            inode: 1,
+            n_link: 1,
+            mode: st_mode,
             ..Default::default()
         })
     }
@@ -131,8 +157,18 @@ impl super::fd_ops::FileLike for Stdin {
     }
 
     fn poll(&self) -> LinuxResult<PollState> {
+        // try unblocking read
+        let mut buf = [0u8; 1];
+        let read_len = self.inner.lock().read(&mut buf)?;
+        let readable = read_len > 0;
+        if readable {
+            // if we read something, we should store it in the buffer
+            let mut stdin_buffer = self.buffer.lock();
+            stdin_buffer.buffer[0] = buf[0];
+            stdin_buffer.available = true;
+        }
         Ok(PollState {
-            readable: true,
+            readable,
             writable: true,
         })
     }
@@ -152,12 +188,12 @@ impl super::fd_ops::FileLike for Stdout {
         Ok(self.inner.lock().write(buf)?)
     }
 
-    fn stat(&self) -> LinuxResult<crate::ctypes::stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         let st_mode = 0o20000 | 0o220u32; // S_IFCHR | -w--w----
-        Ok(crate::ctypes::stat {
-            st_ino: 1,
-            st_nlink: 1,
-            st_mode,
+        Ok(FileStatus {
+            inode: 1,
+            n_link: 1,
+            mode: st_mode,
             ..Default::default()
         })
     }
@@ -168,7 +204,7 @@ impl super::fd_ops::FileLike for Stdout {
 
     fn poll(&self) -> LinuxResult<PollState> {
         Ok(PollState {
-            readable: true,
+            readable: false,
             writable: true,
         })
     }

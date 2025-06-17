@@ -4,14 +4,12 @@ use crate::{
     ptr::{PtrWrapper, UserConstPtr, UserPtr},
     syscall_instrument,
 };
-use arceos_posix_api::ctypes::timespec;
-use arceos_posix_api::{File, get_file_like};
+use arceos_posix_api::{File, TimeSpec, get_file_like};
 use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::DirEntry;
 use axhal::time::{TimeValue, wall_time};
 use core::ffi::{c_char, c_void};
-use core::time::Duration;
-use linux_raw_sys::general::{AT_EMPTY_PATH, UTIME_NOW, UTIME_OMIT};
+use linux_raw_sys::general::{UTIME_NOW, UTIME_OMIT};
 use macro_rules_attribute::apply;
 use syscall_trace::syscall_trace;
 
@@ -183,25 +181,21 @@ pub fn sys_linkat(
         .map_err(|err| err.into())
 }
 
-pub fn sys_getcwd(buf: UserPtr<c_char>, size: usize) -> LinuxResult<isize> {
-    Ok(arceos_posix_api::sys_getcwd(buf.get_as_null_terminated()?.as_ptr() as _, size) as _)
-}
-
 #[syscall_trace]
 pub fn sys_utimensat(
     dir_fd: i32,
     path: UserInPtr<c_char>,
-    times: UserInPtr<timespec>,
+    times: UserInPtr<TimeSpec>,
     flags: u32,
 ) -> LinuxResult<isize> {
-    pub fn timevalue_to_timespec(tv: TimeValue) -> timespec {
-        timespec {
-            tv_sec: tv.as_secs() as _,
-            tv_nsec: tv.subsec_nanos() as _,
+    pub fn timevalue_to_timespec(tv: TimeValue) -> TimeSpec {
+        TimeSpec {
+            seconds: tv.as_secs() as _,
+            nanoseconds: tv.subsec_nanos() as _,
         }
     }
-    fn utime_to_duration(time: &timespec) -> Option<timespec> {
-        match time.tv_nsec {
+    fn utime_to_duration(time: &TimeSpec) -> Option<TimeSpec> {
+        match time.seconds {
             val if val == UTIME_OMIT as _ => None,
             val if val == UTIME_NOW as _ => Some(timevalue_to_timespec(wall_time())),
             _ => Some(time.clone()),

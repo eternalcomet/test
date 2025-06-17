@@ -11,8 +11,8 @@ use axerrno::{LinuxError, LinuxResult};
 use axhal::time::wall_time;
 use axsync::Mutex;
 
-use crate::ctypes;
 use crate::imp::fd_ops::{FileLike, add_file_like, get_file_like};
+use crate::{FileStatus, ctypes};
 
 pub struct EpollInstance {
     events: Mutex<BTreeMap<usize, ctypes::epoll_event>>,
@@ -114,12 +114,12 @@ impl FileLike for EpollInstance {
         Err(LinuxError::ENOSYS)
     }
 
-    fn stat(&self) -> LinuxResult<ctypes::stat> {
+    fn stat(&self) -> LinuxResult<FileStatus> {
         let st_mode = 0o600u32; // rw-------
-        Ok(ctypes::stat {
-            st_ino: 1,
-            st_nlink: 1,
-            st_mode,
+        Ok(FileStatus {
+            inode: 1,
+            n_link: 1,
+            mode: st_mode,
             ..Default::default()
         })
     }

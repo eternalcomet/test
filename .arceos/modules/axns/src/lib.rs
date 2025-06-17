@@ -162,8 +162,6 @@ impl<T: fmt::Debug> fmt::Debug for ResArc<T> {
     }
 }
 
-
-
 /// The interfaces need to be implemented when enable thread-local namespaces.
 #[cfg(feature = "thread-local")]
 #[crate_interface::def_interface]
@@ -239,7 +237,7 @@ macro_rules! def_resource {
                 pub fn as_ptr(obj: &$ty) -> *mut $ty {
                     obj as *const _ as *mut $ty
                 }
-                
+
                 unsafe fn deref_from_base(&self, ns_base: *mut u8) -> &$ty {
                     unsafe extern {
                         fn __start_axns_resource();

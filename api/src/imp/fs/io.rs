@@ -1,10 +1,10 @@
-use core::ffi::{c_char, c_void};
-
 use crate::ptr::{PtrWrapper, UserConstPtr, UserPtr};
 use arceos_posix_api::ctypes::off_t;
-use arceos_posix_api::{self as api, ctypes::mode_t};
-use axerrno::LinuxResult;
+use arceos_posix_api::{self as api, ctypes::mode_t, get_file_like};
+use axerrno::{LinuxError, LinuxResult};
 use axfs::fops::File;
+use axio::SeekFrom;
+use core::ffi::{c_char, c_int, c_void};
 
 pub fn sys_read(fd: i32, buf: UserPtr<c_void>, count: usize) -> LinuxResult<isize> {
     let buf = buf.get_as_bytes(count)?;
@@ -45,8 +45,21 @@ pub fn sys_open(path: UserConstPtr<c_char>, flags: i32, modes: mode_t) -> LinuxR
     sys_openat(AT_FDCWD as _, path, flags, modes)
 }
 
-pub fn sys_lseek(fd: i32, offset: isize, whence: i32) -> LinuxResult<isize> {
-    Ok(api::sys_lseek(fd, offset as off_t, whence) as _)
+pub fn sys_lseek(fd: c_int, offset: isize, whence: c_int) -> LinuxResult<isize> {
+    let pos = match whence {
+        0 => SeekFrom::Start(offset as _),
+        1 => SeekFrom::Current(offset as _),
+        2 => SeekFrom::End(offset as _),
+        _ => return Err(LinuxError::EINVAL),
+    };
+    let file_like = get_file_like(fd)?.into_any();
+    if let Some(file) = file_like.downcast_ref::<api::File>() {
+        let offset = file.inner().lock().seek(pos)?;
+        Ok(offset as _)
+    } else {
+        // For pipes, sockets, FIFOs, they are not seekable, so we return an error.
+        Err(LinuxError::ESPIPE)
+    }
 }
 
 pub fn sys_sendfile(

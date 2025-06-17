@@ -128,18 +128,19 @@ pub fn sys_clone_impl(
         // create process
         // construct process data
         // address space
-        let addr_space = if clone_flags.contains(CloneFlags::VM) {
-            // create another reference to the same address space
-            // we clone the `Arc` itself rather than the data
-            current_process_data().addr_space.clone()
-        } else {
-            // clone the address space
-            let addr_space = &current_process_data().addr_space;
-            let mut addr_space = addr_space.lock();
-            let mut new_addr_space = addr_space.clone_or_err()?;
-            copy_from_kernel(&mut new_addr_space)?;
-            Arc::new(Mutex::new(new_addr_space))
-        };
+        let addr_space =
+            if clone_flags.contains(CloneFlags::VM) && !clone_flags.contains(CloneFlags::VFORK) {
+                // create another reference to the same address space
+                // we clone the `Arc` itself rather than the data
+                current_process_data().addr_space.clone()
+            } else {
+                // clone the address space
+                let addr_space = &current_process_data().addr_space;
+                let mut addr_space = addr_space.lock();
+                let mut new_addr_space = addr_space.try_clone()?;
+                copy_from_kernel(&mut new_addr_space)?;
+                Arc::new(Mutex::new(new_addr_space))
+            };
         let page_table = addr_space.lock().page_table_root();
         new_task.ctx_mut().set_page_table_root(page_table);
         // parent

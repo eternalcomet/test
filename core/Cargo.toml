@@ -27,7 +27,7 @@ linkme.workspace = true
 memory_addr.workspace = true
 
 crate_interface = "0.1"
-kernel-elf-parser = { git = "https://github.com/eternalcomet/kernel_elf_parser", branch = "patch-1" }
+kernel-elf-parser = { git = "https://github.com/eternalcomet/kernel_elf_parser", branch = "main" }
 numeric-enum-macro = "0.2"
 percpu = "0.2.0"
 spin = "0.10.0"

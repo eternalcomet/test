@@ -23,7 +23,7 @@ else ifeq ($(ARCH), aarch64)
   endif
 else ifeq ($(ARCH), loongarch64)
   machine := virt
-  override MEM := 4G
+  override MEM := 1G
 endif
 
 qemu_args-x86_64 := \

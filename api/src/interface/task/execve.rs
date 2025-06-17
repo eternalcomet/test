@@ -5,8 +5,8 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use axerrno::LinuxResult;
-use core::ffi::c_char;
 use axhal::arch::TrapFrame;
+use core::ffi::c_char;
 use syscall_trace::syscall_trace;
 
 fn get_string_array(array: UserConstPtr<usize>) -> LinuxResult<Vec<String>> {

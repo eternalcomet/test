@@ -3,7 +3,7 @@ use core::ffi::CStr;
 use alloc::{string::String, vec};
 use axerrno::{AxError, AxResult};
 use axhal::mem::virt_to_phys;
-use axhal::paging::MappingFlags;
+use axhal::paging::{MappingFlags, PageSize};
 use axmm::{AddrSpace, kernel_aspace};
 use kernel_elf_parser::{AuxvEntry, ELFParser, app_stack_region};
 use memory_addr::{MemoryAddr, PAGE_SIZE_4K, VirtAddr};
@@ -36,6 +36,7 @@ pub fn map_trampoline(aspace: &mut AddrSpace) -> AxResult {
         signal_trampoline_paddr,
         PAGE_SIZE_4K,
         MappingFlags::READ | MappingFlags::EXECUTE | MappingFlags::USER,
+        PageSize::Size4K,
     )?;
     Ok(())
 }
@@ -75,12 +76,13 @@ fn map_elf(uspace: &mut AddrSpace, elf: &ElfFile) -> AxResult<(VirtAddr, [AuxvEn
             seg_align_size,
             segment.flags,
             true,
+            PageSize::Size4K,
         )?;
         let seg_data = elf
             .input
             .get(segment.offset..segment.offset + segment.filesz as usize)
             .ok_or(AxError::InvalidData)?;
-        uspace.write(segment.vaddr, seg_data)?;
+        uspace.write(segment.vaddr, PageSize::Size4K, seg_data)?;
         // TDOO: flush the I-cache
     }
 
@@ -166,6 +168,7 @@ pub fn load_user_app(
         ustack_size,
         MappingFlags::READ | MappingFlags::WRITE | MappingFlags::USER,
         true,
+        PageSize::Size4K,
     )?;
 
     let heap_start = VirtAddr::from_usize(axconfig::plat::USER_HEAP_BASE);
@@ -175,13 +178,14 @@ pub fn load_user_app(
         heap_size,
         MappingFlags::READ | MappingFlags::WRITE | MappingFlags::USER,
         true,
+        PageSize::Size4K,
     )?;
 
     let user_sp = ustack_end - stack_data.len();
 
     assert!(user_sp.is_aligned(16usize), "user sp is not aligned to 16");
 
-    uspace.write(user_sp, stack_data.as_slice())?;
+    uspace.write(user_sp, PageSize::Size4K, stack_data.as_slice())?;
 
     debug!("entry: {:#x?}  sp:: {:#x?}", entry, user_sp);
 

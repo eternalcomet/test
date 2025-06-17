@@ -2,12 +2,15 @@
 
 #![no_std]
 
+extern crate alloc;
 #[macro_use]
 extern crate log;
-extern crate alloc;
 
 mod aspace;
 mod backend;
+#[cfg(feature = "cow")]
+mod frameinfo;
+mod page_iter_wrapper;
 
 pub use self::aspace::AddrSpace;
 pub use self::backend::Backend;
@@ -18,6 +21,7 @@ use kspin::SpinNoIrq;
 use lazyinit::LazyInit;
 use memory_addr::{PhysAddr, va};
 use memory_set::MappingError;
+use page_table_multiarch::PageSize;
 
 static KERNEL_ASPACE: LazyInit<SpinNoIrq<AddrSpace>> = LazyInit::new();
 
@@ -37,7 +41,13 @@ pub fn new_kernel_aspace() -> AxResult<AddrSpace> {
         axconfig::plat::KERNEL_ASPACE_SIZE,
     )?;
     for r in axhal::mem::memory_regions() {
-        aspace.map_linear(phys_to_virt(r.paddr), r.paddr, r.size, r.flags.into())?;
+        aspace.map_linear(
+            phys_to_virt(r.paddr),
+            r.paddr,
+            r.size,
+            r.flags.into(),
+            PageSize::Size4K,
+        )?;
     }
     Ok(aspace)
 }
