@@ -27,21 +27,13 @@ jobs:
           targets: x86_64-unknown-none, riscv64gc-unknown-none-elf, aarch64-unknown-none, aarch64-unknown-none-softfloat, loongarch64-unknown-none
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-binutils
-      - uses: ./.github/workflows/setup-musl
+      - uses: arceos-org/setup-musl@v1
         with:
-          arch: riscv64
-      - uses: ./.github/workflows/setup-musl
+          arch: ${{ matrix.arch }}
+      - uses: arceos-org/setup-qemu@v1
         with:
-          arch: loongarch64
-      - uses: ./.github/workflows/setup-musl
-        with:
-          arch: aarch64
-      - uses: ./.github/workflows/setup-musl
-        with:
-          arch: x86_64
-      - uses: ./.github/workflows/setup-qemu
-        with:
-          qemu-version: ${{ env.qemu-version }}
+          version: ${{ env.qemu-version }}
+          arch_list: x86_64,aarch64,riscv64,loongarch64
       - name: Build python environment
         run: sudo apt-get install -y python3 python3-pip
       - name: build os.bin
