@@ -121,8 +121,8 @@ pub fn sys_mmap(
 
     let aligned_length = align_up(length, page_size.into());
 
-    let addr = VirtAddr::from(addr).align_down(page_size);
-    let start_addr = if map_flags.contains(MmapFlags::MAP_FIXED | MmapFlags::MAP_FIXED_NOREPLACE) {
+    let addr = VirtAddr::from(addr);
+    let start_addr = if map_flags.intersects(MmapFlags::MAP_FIXED | MmapFlags::MAP_FIXED_NOREPLACE) {
         // If the memory region specified by addr and length overlaps pages of any existing mapping(s),
         // then the overlapped part of the existing mapping(s) will be discarded.
         if map_flags.contains(MmapFlags::MAP_FIXED) {
@@ -135,6 +135,7 @@ pub fn sys_mmap(
         // currently we find free area in the whole address space
         // in Linux, the boundary is above or equal to the value specified by `/proc/sys/vm/mmap_min_addr`
         let range = VirtAddrRange::new(aspace.base(), aspace.end());
+        let addr = addr.align_down(page_size);
         aspace
             .find_free_area(addr, length, range, page_size)
             .or(aspace.find_free_area(aspace.base(), length, range, page_size))
