@@ -9,6 +9,8 @@ pub fn sys_setrlimit_impl(
     limit: &ResourceLimit,
     pid: Pid,
 ) -> LinuxResult<isize> {
+    debug!("[sys_setrlimit_impl] set limit for resource: {resource:?}");
+
     let process_data = if pid == 0 {
         current_process_data()
     } else {
@@ -27,6 +29,8 @@ pub fn sys_setrlimit_impl(
 }
 
 pub fn sys_getrlimit_impl(resource: &ResourceLimitType, pid: Pid) -> LinuxResult<ResourceLimit> {
+    debug!("[sys_getrlimit_impl] get limit for resource: {resource:?}");
+
     let process_data = if pid == 0 {
         current_process_data()
     } else {

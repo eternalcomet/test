@@ -35,6 +35,7 @@ impl ResourceLimitType {
     }
 }
 
+#[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
 pub struct ResourceLimit {
     pub soft: u64,

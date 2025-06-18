@@ -1,5 +1,3 @@
-//! FrameInfo
-//!
 //! A simple physical FrameInfo manager is provided to track and manage
 //! the reference count for every 4KB memory page frame in the system.
 //!
@@ -7,12 +5,10 @@
 //! that keeps track of its reference count.
 //! NOTE: If the page is huge page, its [`FrameInfo`] is placed at the
 //! starting physical address.
-use core::{
-    array,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use alloc::boxed::Box;
+use core::mem::MaybeUninit;
 use lazy_static::lazy_static;
 use memory_addr::PhysAddr;
 // 4 kb page
@@ -34,8 +30,13 @@ pub(crate) struct FrameRefTable {
 
 impl Default for FrameRefTable {
     fn default() -> Self {
+        let mut data = Box::new_uninit_slice(MAX_FRAME_NUM);
+        data.fill_with(|| MaybeUninit::new(FrameInfo::default()));
+        let data = unsafe { data.assume_init() };
         FrameRefTable {
-            data: Box::new(array::from_fn(|_| FrameInfo::default())),
+            data: data.try_into().unwrap_or_else(|_| {
+                panic!("FrameRefTable initialization failed: size mismatch");
+            }),
         }
     }
 }

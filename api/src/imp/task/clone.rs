@@ -86,6 +86,7 @@ pub fn sys_clone_impl(
     addr_child_tid: usize,
     exit_signal: Option<Signo>,
 ) -> LinuxResult<isize> {
+    debug!("[sys_clone_impl] clone with flags: {clone_flags:?}, exit_signal: {exit_signal:?})");
     // duplicate trap frame
     let trap_frame = read_trapframe_from_kstack(current().get_kernel_stack_top().unwrap());
     let mut new_uctx = UspaceContext::from(&trap_frame);

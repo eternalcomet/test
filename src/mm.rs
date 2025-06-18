@@ -1,3 +1,4 @@
+use arceos_posix_api::config::plat::PHYS_VIRT_OFFSET;
 use axerrno::LinuxError;
 use axhal::mem::VirtAddr;
 use axhal::paging::MappingFlags;
@@ -8,12 +9,18 @@ use starry_core::task::current_process_data;
 
 #[register_trap_handler(PAGE_FAULT)]
 fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool) -> bool {
-    if !is_user && !is_accessing_user_memory() {
-        warn!(
-            "Page fault at {:#x}, access_flags: {:#x?}",
+    if vaddr.as_usize() > PHYS_VIRT_OFFSET {
+        error!(
+            "Kernel page fault at {:#x}, access_flags: {:#x?}",
             vaddr, access_flags
         );
         return false;
+    }
+    if !is_user && !is_accessing_user_memory() {
+        warn!(
+            "Maybe we are accessing user memory in kernel, and triggered a page fault at {:#x}, access_flags: {:#x?}",
+            vaddr, access_flags
+        );
     }
 
     if !current_process_data()

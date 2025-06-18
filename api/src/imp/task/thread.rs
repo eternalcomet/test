@@ -1,5 +1,5 @@
+use crate::ptr::PtrWrapper;
 use crate::ptr::UserInPtr;
-use crate::ptr::{PtrWrapper};
 use axerrno::LinuxResult;
 use core::sync::atomic::Ordering;
 use num_enum::TryFromPrimitive;

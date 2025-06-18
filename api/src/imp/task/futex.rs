@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 use axerrno::{LinuxError, LinuxResult};
 use axtask::WaitQueue;
 use linux_raw_sys::general::{
-    FUTEX_CMD_MASK, FUTEX_CMP_REQUEUE, FUTEX_REQUEUE, FUTEX_WAIT, FUTEX_WAKE, timespec,
+    FUTEX_BITSET_MATCH_ANY, FUTEX_CMD_MASK, FUTEX_CMP_REQUEUE, FUTEX_REQUEUE, FUTEX_WAIT,
+    FUTEX_WAIT_BITSET, FUTEX_WAKE, FUTEX_WAKE_BITSET, timespec,
 };
 use starry_core::task::current_process_data;
 use syscall_trace::syscall_trace;
@@ -85,6 +86,53 @@ pub fn sys_futex(
                 }
                 count += wq.requeue(value2 as usize, &wq2) as isize;
             }
+            Ok(count)
+        }
+        FUTEX_WAIT_BITSET => {
+            let bitset = value3;
+            // TODO: Implement bitset support
+            if bitset != FUTEX_BITSET_MATCH_ANY {
+                warn!(
+                    "[sys_futex] FUTEX_WAIT_BITSET does not support bitset except FUTEX_BITSET_MATCH_ANY yet."
+                );
+                return Err(LinuxError::ENOSYS);
+            }
+            if *uaddr.get_as_ref()? != value {
+                return Err(LinuxError::EAGAIN);
+            }
+            let wq = futex_table
+                .lock()
+                .entry(addr)
+                .or_insert_with(new_futex)
+                .clone();
+
+            if !timeout.is_null() {
+                wq.wait_timeout(timespec_to_timevalue(*timeout.get_as_ref()?), true);
+            } else {
+                wq.wait();
+            }
+            Ok(0)
+        }
+        FUTEX_WAKE_BITSET => {
+            let bitset = value3;
+            // TODO: Implement bitset support
+            if bitset != FUTEX_BITSET_MATCH_ANY {
+                warn!(
+                    "[sys_futex] FUTEX_WAIT_BITSET does not support bitset except FUTEX_BITSET_MATCH_ANY yet."
+                );
+                return Err(LinuxError::ENOSYS);
+            }
+            let wq = futex_table.lock().get(&addr).cloned();
+            let mut count = 0;
+            if let Some(wq) = wq {
+                for _ in 0..value {
+                    if !wq.notify_one(false) {
+                        break;
+                    }
+                    count += 1;
+                }
+            }
+            axtask::yield_now();
             Ok(count)
         }
         _ => {

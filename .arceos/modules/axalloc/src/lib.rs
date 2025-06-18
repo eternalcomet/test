@@ -7,9 +7,9 @@
 
 #![no_std]
 
+extern crate alloc;
 #[macro_use]
 extern crate log;
-extern crate alloc;
 
 mod page;
 
@@ -17,6 +17,7 @@ use allocator::{AllocResult, BaseAllocator, BitmapPageAllocator, ByteAllocator, 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
 use kspin::SpinNoIrq;
+use memory_addr::align_up;
 
 const PAGE_SIZE: usize = 0x1000;
 const MIN_HEAP_SIZE: usize = 0x8000; // 32 K
@@ -110,10 +111,11 @@ impl GlobalAllocator {
                 return Ok(ptr);
             } else {
                 let old_size = balloc.total_bytes();
-                let expand_size = old_size
-                    .max(layout.size())
+                let mut expand_size = old_size
                     .next_power_of_two()
-                    .max(PAGE_SIZE);
+                    .min(self.available_pages() / 3 * PAGE_SIZE)
+                    .max(layout.size());
+                expand_size = align_up(expand_size, PAGE_SIZE);
                 let heap_ptr = self.alloc_pages(expand_size / PAGE_SIZE, PAGE_SIZE)?;
                 debug!(
                     "expand heap memory: [{:#x}, {:#x})",

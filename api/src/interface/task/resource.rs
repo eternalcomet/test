@@ -15,7 +15,9 @@ pub fn sys_prlimit64(
     let resource = ResourceLimitType::try_from(resource as u32).map_err(|_| LinuxError::EINVAL)?;
     if !old_limit.is_null() {
         let old_value = sys_getrlimit_impl(&resource, pid as _)?;
-        unsafe { old_limit.get()?.write(old_value); }
+        unsafe {
+            old_limit.get()?.write(old_value);
+        }
     }
     if !new_limit.is_null() {
         let new_value = new_limit.get_as_ref()?;
@@ -40,6 +42,8 @@ pub fn sys_getrlimit(
 ) -> LinuxResult<isize> {
     let resource = ResourceLimitType::try_from(resource as u32).map_err(|_| LinuxError::EINVAL)?;
     let old_value = sys_getrlimit_impl(&resource, 0)?;
-    unsafe{resource_limit.get()?.write(old_value);}
+    unsafe {
+        resource_limit.get()?.write(old_value);
+    }
     Ok(0)
 }

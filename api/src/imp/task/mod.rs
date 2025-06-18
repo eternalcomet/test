@@ -2,11 +2,11 @@ mod clone;
 mod execve;
 mod exit;
 mod futex;
+pub mod resource;
 pub mod schedule;
 pub mod signal;
 mod thread;
 mod wait;
-pub mod resource;
 
 pub use self::clone::*;
 pub use self::execve::*;

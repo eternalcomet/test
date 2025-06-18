@@ -4,15 +4,16 @@ use crate::{
     syscall_instrument,
 };
 use alloc::vec;
+use arceos_posix_api::{File, FileLike};
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::{MappingFlags, PageSize};
-use arceos_posix_api::{File, FileLike};
 use linux_raw_sys::general::{
     MAP_ANONYMOUS, MAP_FIXED, MAP_FIXED_NOREPLACE, MAP_HUGE_1GB, MAP_HUGE_2MB, MAP_HUGETLB,
-    MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK,
+    MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, MAP_STACK, PROT_EXEC, PROT_GROWSDOWN, PROT_GROWSUP,
+    PROT_READ, PROT_WRITE,
 };
 use macro_rules_attribute::apply;
-use memory_addr::{VirtAddr, VirtAddrRange, align_up, MemoryAddr};
+use memory_addr::{MemoryAddr, VirtAddr, VirtAddrRange, align_up};
 use starry_core::task::current_process_data;
 use syscall_trace::syscall_trace;
 
@@ -23,15 +24,15 @@ bitflags::bitflags! {
     #[derive(Debug)]
     struct MmapProt: u32 {
         /// Page can be read.
-        const PROT_READ = 1 << 0;
+        const PROT_READ = PROT_READ;
         /// Page can be written.
-        const PROT_WRITE = 1 << 1;
+        const PROT_WRITE = PROT_WRITE;
         /// Page can be executed.
-        const PROT_EXEC = 1 << 2;
+        const PROT_EXEC = PROT_EXEC;
         /// Extend change to start of growsdown vma (mprotect only).
-        const PROT_GROWDOWN = 0x01000000;
+        const PROT_GROWDOWN = PROT_GROWSDOWN;
         /// Extend change to start of growsup vma (mprotect only).
-        const PROT_GROWSUP = 0x02000000;
+        const PROT_GROWSUP = PROT_GROWSUP;
     }
 }
 
@@ -122,7 +123,8 @@ pub fn sys_mmap(
     let aligned_length = align_up(length, page_size.into());
 
     let addr = VirtAddr::from(addr);
-    let start_addr = if map_flags.intersects(MmapFlags::MAP_FIXED | MmapFlags::MAP_FIXED_NOREPLACE) {
+    let start_addr = if map_flags.intersects(MmapFlags::MAP_FIXED | MmapFlags::MAP_FIXED_NOREPLACE)
+    {
         // If the memory region specified by addr and length overlaps pages of any existing mapping(s),
         // then the overlapped part of the existing mapping(s) will be discarded.
         if map_flags.contains(MmapFlags::MAP_FIXED) {
