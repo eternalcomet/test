@@ -29,11 +29,14 @@ jobs:
       - run: cargo install cargo-binutils
       - uses: arceos-org/setup-musl@v1
         with:
+          arch: loongarch64
+      - uses: arceos-org/setup-musl@v1
+        with:
           arch: riscv64
       - uses: arceos-org/setup-qemu@v1
         with:
           version: ${{ env.qemu-version }}
-          arch_list: riscv64
+          arch_list: riscv64,loongarch64
       - name: Build python environment
         run: sudo apt-get install -y python3 python3-pip
       - name: build os.bin
