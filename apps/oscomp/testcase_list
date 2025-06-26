@@ -24,9 +24,7 @@ ln -v -s /lib /usr/lib64
 
 # ============ test cases compiled with musl ============
 cd /musl || exit 1
-# ./basic/gettimeofday
 ./basic_testcode.sh
-exit
 ./lua_testcode.sh
 ./libctest_testcode.sh
 ./busybox_testcode.sh
