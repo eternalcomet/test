@@ -1,6 +1,6 @@
 use crate::imp::task::sys_execve_impl;
-use crate::imp::utils::path::resolve_path;
 use crate::ptr::{UserConstPtr, UserInPtr};
+use crate::utils::path::resolve_path_at_cwd;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -39,7 +39,7 @@ pub fn sys_execve(
         new_args.extend(args);
         sys_execve_impl(tf, BUSYBOX.to_string(), new_args, envs)
     } else {
-        let abs_path = resolve_path(path)?;
+        let abs_path = resolve_path_at_cwd(Some(path))?.absolute_path()?;
         let mut new_args = vec![abs_path.to_string()];
         new_args.extend(args[1..].iter().cloned());
         sys_execve_impl(tf, abs_path.to_string(), new_args, envs)

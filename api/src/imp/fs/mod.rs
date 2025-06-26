@@ -1,13 +1,11 @@
 mod ctl;
 mod fd_ops;
-pub mod fs;
 mod io;
 mod mount;
 pub mod path;
 mod pipe;
 pub mod poll;
-mod stat;
-pub mod status;
+pub mod stat;
 
 pub use self::ctl::*;
 pub use self::fd_ops::*;

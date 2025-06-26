@@ -1,6 +1,6 @@
+use crate::core::fs::fd::close_all_file_like;
 use crate::imp::task::signal::{send_signal_process, send_signal_thread};
 use crate::ptr::{PtrWrapper, UserPtr};
-use arceos_posix_api::close_all_file_like;
 use axsignal::{SignalInfo, Signo};
 use core::sync::atomic::Ordering;
 use linux_raw_sys::general::SI_KERNEL;
@@ -59,6 +59,7 @@ pub fn sys_exit_impl(exit_code: i32, exit_group: bool) -> ! {
         close_all_file_like();
         if exit_group {
             // TODO: prevent exit_group from being called multiple times
+
             let sig = SignalInfo::new(Signo::SIGKILL, SI_KERNEL);
             for thread in process.get_threads() {
                 let _ = send_signal_thread(thread.get_tid(), sig.clone());

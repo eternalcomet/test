@@ -100,6 +100,10 @@ impl Process {
         self.children.lock().values().cloned().collect()
     }
 
+    pub fn get_child(&self, pid: Pid) -> Option<Arc<Process>> {
+        self.children.lock().get(&pid).cloned()
+    }
+
     /// only can be used in `create_process` function
     /// does nothing but initialize fields
     fn new(pid: Pid, parent: Weak<Process>, group: Weak<ProcessGroup>) -> Arc<Self> {

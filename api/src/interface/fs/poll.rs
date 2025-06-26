@@ -238,7 +238,7 @@ fn sys_select_(
 
     // copy results back
     let mut count = 0;
-    for i in 0..n_fds {
+    for i in 0..entries.len() {
         let entry = &entries[i];
         // if read_fds_slice.get_bit(i) != 0 {
         let mut updated = false;

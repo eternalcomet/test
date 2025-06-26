@@ -8,7 +8,8 @@ repository.workspace = true
 
 [dependencies]
 axconfig.workspace = true
-axfs.workspace = true
+axfs-ng.workspace = true
+axns.workspace = true
 axhal.workspace = true
 axlog.workspace = true
 axsync.workspace = true
@@ -28,6 +29,7 @@ linux-raw-sys.workspace = true
 starry-core.workspace = true
 syscall-trace.workspace = true
 undefined-process.workspace = true
+undefined-vfs.workspace = true
 
 macro_rules_attribute = "0.2"
 num_enum = { version = "0.7", default-features = false }
@@ -37,6 +39,7 @@ bit_field = "0.10.2"
 axfs_vfs = "0.1.1"
 rand_mt = "5.0.0"
 lazy_static = "1.5.0"
+flatten_objects = "0.2.3"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52"

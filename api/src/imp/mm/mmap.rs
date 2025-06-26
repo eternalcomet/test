@@ -1,10 +1,11 @@
+use crate::core::fs::fd::FileLike;
+use crate::core::fs::file::File;
 use crate::ptr::UserInPtr;
 use crate::{
     ptr::{PtrWrapper, UserPtr},
     syscall_instrument,
 };
 use alloc::vec;
-use arceos_posix_api::{File, FileLike};
 use axerrno::{LinuxError, LinuxResult};
 use axhal::paging::{MappingFlags, PageSize};
 use linux_raw_sys::general::{
@@ -163,22 +164,22 @@ pub fn sys_mmap(
 
     if populate {
         let file = File::from_fd(fd)?;
-        let file_size = file.stat()?.size as usize;
+        let file_size = file.status()?.size as usize;
 
         if writeable {
             error!(
                 "we don't support PROT_WRITE for mmap with fd yet. file: {}.",
-                file.path()
+                file.inner().location().absolute_path()?.as_str()
             );
         }
-        let file = file.inner().lock();
+        let mut file = file.inner();
         if offset < 0 || offset as usize >= file_size {
             return Err(LinuxError::EINVAL);
         }
         let offset = offset as usize;
         let length = core::cmp::min(length, file_size - offset);
         let mut buf = vec![0u8; length];
-        file.read_at(offset as u64, &mut buf)?;
+        file.read_at(&mut buf, offset as _)?;
         aspace.write(start_addr, page_size, &buf)?;
     }
     Ok(start_addr.as_usize() as _)

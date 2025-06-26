@@ -1,18 +1,16 @@
-use crate::imp::fs::FsStatxTimestamp;
-use crate::imp::fs::status::{FileStatus, sys_stat_impl};
-use crate::ptr::{PtrWrapper, UserInPtr, UserOutPtr};
+use crate::core::fs::fd::fd_lookup;
+use crate::core::time::TimeSpec;
+use crate::imp::fs::stat::sys_stat_impl;
+use crate::imp::fs::{FsStatxTimestamp, UserStatFs, sys_statfs_impl};
+use crate::ptr::{UserInPtr, UserOutPtr, nullable};
+use crate::utils::path::{ResolveFlags, resolve_path_at_cwd};
 use alloc::format;
-use arceos_posix_api::AT_FDCWD;
-use arceos_posix_api::TimeSpec;
 use axerrno::LinuxError;
 use axerrno::LinuxResult;
-use axhal::time::monotonic_time_nanos;
 use core::ffi::{c_char, c_int, c_long, c_uint, c_ulong};
+use linux_raw_sys::general::{AT_FDCWD, STATX_BASIC_STATS};
 use syscall_trace::syscall_trace;
-
-// user constants
-const AT_EMPTY_PATH: c_int = 0x1000;
-const AT_SYMLINK_NOFOLLOW: c_int = 0x100;
+use undefined_vfs::types::Metadata;
 
 /// user struct: stat
 #[cfg(target_arch = "x86_64")]
@@ -53,22 +51,25 @@ pub struct UserStat {
 }
 
 #[cfg(target_arch = "x86_64")]
-impl From<FileStatus> for UserStat {
-    fn from(fs: FileStatus) -> Self {
+impl From<Metadata> for UserStat {
+    fn from(metadata: Metadata) -> Self {
+        let node_type = metadata.node_type as u32;
+        let permissions = metadata.mode.bits() as u32;
+        let st_mode = (node_type << 12) | permissions;
         UserStat {
-            st_dev: fs.dev as c_ulong,
-            st_ino: fs.inode as c_ulong,
-            st_nlink: fs.n_link as c_ulong,
-            st_mode: fs.mode,
-            st_uid: fs.uid,
-            st_gid: fs.gid,
-            st_rdev: fs.rdev as c_ulong,
-            st_size: fs.size as c_long,
-            st_blksize: fs.block_size as c_long,
-            st_blocks: fs.n_blocks as c_long,
-            st_atime: fs.access_time,
-            st_mtime: fs.modify_time,
-            st_ctime: fs.change_time,
+            st_dev: metadata.device,
+            st_ino: metadata.inode,
+            st_nlink: metadata.n_link as _,
+            st_mode,
+            st_uid: metadata.uid,
+            st_gid: metadata.gid,
+            st_rdev: metadata.raw_device.as_u64(),
+            st_size: metadata.size as _,
+            st_blksize: metadata.block_size as _,
+            st_blocks: metadata.n_blocks as _,
+            st_atime: metadata.access_time.into(),
+            st_mtime: metadata.modify_time.into(),
+            st_ctime: metadata.change_time.into(),
             ..Default::default()
         }
     }
@@ -116,22 +117,25 @@ pub struct UserStat {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-impl From<FileStatus> for UserStat {
-    fn from(fs: FileStatus) -> Self {
+impl From<Metadata> for UserStat {
+    fn from(metadata: Metadata) -> Self {
+        let node_type = metadata.node_type as u32;
+        let permissions = metadata.mode.bits() as u32;
+        let st_mode = (node_type << 12) | permissions;
         UserStat {
-            st_dev: fs.dev as c_ulong,
-            st_ino: fs.inode as c_ulong,
-            st_mode: fs.mode,
-            st_nlink: fs.n_link as c_uint,
-            st_uid: fs.uid,
-            st_gid: fs.gid,
-            st_rdev: fs.rdev as c_ulong,
-            st_size: fs.size as c_long,
-            st_blksize: fs.block_size as c_int,
-            st_blocks: fs.n_blocks as c_long,
-            st_atime: fs.access_time,
-            st_mtime: fs.modify_time,
-            st_ctime: fs.change_time,
+            st_dev: metadata.device,
+            st_ino: metadata.inode,
+            st_nlink: metadata.n_link as _,
+            st_mode,
+            st_uid: metadata.uid,
+            st_gid: metadata.gid,
+            st_rdev: metadata.raw_device.as_u64(),
+            st_size: metadata.size as _,
+            st_blksize: metadata.block_size as _,
+            st_blocks: metadata.n_blocks as _,
+            st_atime: metadata.access_time.into(),
+            st_mtime: metadata.modify_time.into(),
+            st_ctime: metadata.change_time.into(),
             ..Default::default()
         }
     }
@@ -194,22 +198,27 @@ pub struct UserStatX {
     pub _spare: [u32; 12],
 }
 
-impl From<FileStatus> for UserStatX {
-    fn from(fs: FileStatus) -> Self {
+impl From<Metadata> for UserStatX {
+    fn from(metadata: Metadata) -> Self {
+        let node_type = metadata.node_type as u32;
+        let permissions = metadata.mode.bits() as u32;
+        let st_mode = (node_type << 12) | permissions;
         Self {
-            stx_blksize: fs.block_size as _,
-            stx_attributes: fs.mode as _,
-            stx_nlink: fs.n_link as _,
-            stx_uid: fs.uid,
-            stx_gid: fs.gid,
-            stx_mode: fs.mode as _,
-            stx_ino: fs.inode as _,
-            stx_size: fs.size as _,
-            stx_blocks: fs.n_blocks as _,
-            stx_attributes_mask: 0x7FF,
-            stx_atime: fs.access_time.into(),
-            stx_ctime: fs.change_time.into(),
-            stx_mtime: fs.modify_time.into(),
+            stx_mask: STATX_BASIC_STATS,
+            stx_blksize: metadata.block_size as _,
+            stx_nlink: metadata.n_link as _,
+            stx_uid: metadata.uid,
+            stx_gid: metadata.gid,
+            stx_mode: st_mode as _,
+            stx_ino: metadata.inode as _,
+            stx_size: metadata.size as _,
+            stx_blocks: metadata.n_blocks as _,
+            stx_atime: metadata.access_time.into(),
+            stx_ctime: metadata.change_time.into(),
+            stx_mtime: metadata.modify_time.into(),
+            stx_dev_major: metadata.device as _,
+            stx_rdev_major: metadata.raw_device.major(),
+            stx_rdev_minor: metadata.raw_device.minor(),
             ..Default::default()
         }
     }
@@ -217,40 +226,27 @@ impl From<FileStatus> for UserStatX {
 
 #[syscall_trace]
 pub fn sys_stat(path: UserInPtr<c_char>, stat_buf: UserOutPtr<UserStat>) -> LinuxResult<isize> {
-    // get params
-    let path = path.get_as_str()?;
-    let stat_buf = stat_buf.get()?;
-
-    // perform syscall
-    let file_status = sys_stat_impl(-1, path, false)?;
-    unsafe { stat_buf.write(file_status.into()) }
+    let path = nullable!(path.get_as_str())?;
+    let stat_buf = stat_buf.get_as_mut_ref()?;
+    let file_status = sys_stat_impl(AT_FDCWD, path, ResolveFlags::empty())?;
+    *stat_buf = file_status.into();
     Ok(0)
 }
 
-/// TODO: ignored following symlinks
 #[syscall_trace]
 pub fn sys_lstat(path: UserInPtr<c_char>, stat_buf: UserOutPtr<UserStat>) -> LinuxResult<isize> {
-    // get params
-    let path = path.get_as_str()?;
-    let stat_buf = stat_buf.get()?;
-
-    // perform syscall
-    let file_status = sys_stat_impl(-1, path, true)?;
-    unsafe { stat_buf.write(file_status.into()) }
+    let path = nullable!(path.get_as_str())?;
+    let stat_buf = stat_buf.get_as_mut_ref()?;
+    let file_status = sys_stat_impl(AT_FDCWD, path, ResolveFlags::NO_FOLLOW)?;
+    *stat_buf = file_status.into();
     Ok(0)
 }
 
 #[syscall_trace]
 pub fn sys_fstat(fd: c_int, stat_buf: UserOutPtr<UserStat>) -> LinuxResult<isize> {
-    // get params
-    let stat_buf = stat_buf.get()?;
-
-    // perform syscall
-    if fd < 0 && fd != AT_FDCWD as i32 {
-        return Err(LinuxError::EBADFD);
-    }
-    let file_status = sys_stat_impl(fd, "", false)?;
-    unsafe { stat_buf.write(file_status.into()) }
+    let stat_buf = stat_buf.get_as_mut_ref()?;
+    let file_status = sys_stat_impl(fd, None, ResolveFlags::empty())?;
+    *stat_buf = file_status.into();
     Ok(0)
 }
 
@@ -261,28 +257,11 @@ pub fn sys_fstatat(
     stat_buf: UserOutPtr<UserStat>,
     flags: c_int,
 ) -> LinuxResult<isize> {
-    error!("[fstatat] [{}] syscall start", monotonic_time_nanos());
-    // get params
-    let path = path.get_as_str().unwrap_or("");
-    let stat_buf = stat_buf.get()?;
-
-    // perform syscall
-    if dir_fd < 0 && dir_fd != AT_FDCWD as i32 {
-        return Err(LinuxError::EBADFD);
-    }
-    // TODO: some flags are ignored
-    if path.is_empty() && (flags & AT_EMPTY_PATH == 0) {
-        return Err(LinuxError::ENOENT);
-    }
-    let follow_symlinks = flags & AT_SYMLINK_NOFOLLOW == 0;
-    error!("[fstatat] [{}] impl start", monotonic_time_nanos());
-    let file_status = sys_stat_impl(dir_fd, path, follow_symlinks)?;
-    error!("[fstatat] [{}] impl end", monotonic_time_nanos());
-
-    // write result
-    unsafe { stat_buf.write(file_status.into()) }
-    error!("[fstatat] [{}] write end", monotonic_time_nanos());
-
+    let path = nullable!(path.get_as_str())?;
+    let stat_buf = stat_buf.get_as_mut_ref()?;
+    let flags = ResolveFlags::from_bits_truncate(flags as _);
+    let file_status = sys_stat_impl(dir_fd, path, flags)?;
+    *stat_buf = file_status.into();
     Ok(0)
 }
 
@@ -294,21 +273,30 @@ pub fn sys_statx(
     _mask: c_uint,
     statx_buf: UserOutPtr<UserStatX>,
 ) -> LinuxResult<isize> {
-    // get params
-    let path = path.get_as_str().unwrap_or("");
-    let statx_buf = statx_buf.get()?;
+    let path = nullable!(path.get_as_str())?;
+    let statx_buf = statx_buf.get_as_mut_ref()?;
+    let flags = ResolveFlags::from_bits_truncate(flags as _);
+    let file_status = sys_stat_impl(dir_fd, path, flags)?;
+    *statx_buf = file_status.into();
+    Ok(0)
+}
 
-    // perform syscall
-    if dir_fd < 0 && dir_fd != AT_FDCWD as i32 {
-        return Err(LinuxError::EBADFD);
-    }
-    // TODO: some flags are ignored
-    if path.is_empty() && (flags & AT_EMPTY_PATH == 0) {
-        return Err(LinuxError::ENOENT);
-    }
-    let follow_symlinks = flags & AT_SYMLINK_NOFOLLOW == 0;
-    let file_status = sys_stat_impl(dir_fd, path, follow_symlinks)?;
-    // TODO: add more fields
-    unsafe { statx_buf.write(file_status.into()) }
+#[syscall_trace]
+pub fn sys_statfs(path: UserInPtr<c_char>, buf: UserOutPtr<UserStatFs>) -> LinuxResult<isize> {
+    let path = nullable!(path.get_as_str())?;
+    let buf = buf.get_as_mut_ref()?;
+    let location = resolve_path_at_cwd(path)?;
+    let location = location.mountpoint().root_location();
+    sys_statfs_impl(&location, buf)?;
+    Ok(0)
+}
+
+#[syscall_trace]
+pub fn sys_fstatfs(fd: c_int, buf: UserOutPtr<UserStatFs>) -> LinuxResult<isize> {
+    let buf = buf.get_as_mut_ref()?;
+    let file_like = fd_lookup(fd)?;
+    let location = file_like.location().ok_or(LinuxError::EINVAL)?;
+    let location = location.mountpoint().root_location();
+    sys_statfs_impl(&location, buf)?;
     Ok(0)
 }

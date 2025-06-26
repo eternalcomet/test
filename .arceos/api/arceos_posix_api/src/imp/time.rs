@@ -55,44 +55,6 @@ pub unsafe fn sys_clock_gettime(clk: ctypes::clockid_t, ts: *mut ctypes::timespe
     })
 }
 
-/// Sleep some nanoseconds
-///
-/// TODO: should be woken by signals, and set errno
-pub unsafe fn sys_nanosleep(req: *const ctypes::timespec, rem: *mut ctypes::timespec) -> c_int {
-    syscall_body!(sys_nanosleep, {
-        unsafe {
-            if req.is_null() || (*req).tv_nsec < 0 || (*req).tv_nsec > 999999999 {
-                return Err(LinuxError::EINVAL);
-            }
-        }
-
-        let dur = unsafe {
-            debug!("sys_nanosleep <= {}.{:09}s", (*req).tv_sec, (*req).tv_nsec);
-            Duration::from(*req)
-        };
-
-        let now = axhal::time::monotonic_time();
-
-        // FIXME: this blocks for single-core, probably irq is disabled by a spin lock
-        // so we use busy wait instead of axtask::sleep to prevent deadlock
-        // #[cfg(feature = "multitask")]
-        // axtask::sleep(dur);
-        // #[cfg(not(feature = "multitask"))]
-        axhal::time::busy_wait(dur);
-
-        let after = axhal::time::monotonic_time();
-        let actual = after - now;
-
-        if let Some(diff) = dur.checked_sub(actual) {
-            if !rem.is_null() {
-                unsafe { (*rem) = diff.into() };
-            }
-            return Err(LinuxError::EINTR);
-        }
-        Ok(0)
-    })
-}
-
 /// Get current system time and store in specific struct
 pub unsafe fn sys_get_time_of_day(ts: *mut ctypes::timeval) -> c_int {
     syscall_body!(sys_get_time_of_day, {

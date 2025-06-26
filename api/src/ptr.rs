@@ -15,6 +15,10 @@ fn check_region(start: VirtAddr, layout: Layout, access_flags: MappingFlags) -> 
     }
 
     let task = current_process_data();
+    if start.checked_add(layout.size()).is_none() {
+        // overflow
+        return Err(LinuxError::EFAULT);
+    }
     let mut aspace = task.addr_space.lock();
 
     if !aspace.check_region_access(
@@ -62,6 +66,10 @@ fn check_null_terminated<T: Eq + Default>(
                 // allocated yet.
                 let task = current_process_data();
                 let aspace = task.addr_space.lock();
+                if page.checked_add(PAGE_SIZE_4K).is_none() {
+                    // overflow
+                    return Err(LinuxError::EFAULT);
+                }
                 if !aspace.check_region_access(
                     VirtAddrRange::from_start_size(page, PAGE_SIZE_4K),
                     access_flags,
@@ -375,3 +383,14 @@ impl<T: Debug + 'static> Debug for UserConstPtr<T> {
         f.debug_tuple("UserConstPtr").field(&self.0).finish()
     }
 }
+
+macro_rules! nullable {
+    ($ptr:ident.$func:ident($($arg:expr),*)) => {
+        if $ptr.is_null() {
+            Ok(None)
+        } else {
+            Some($ptr.$func($($arg),*)).transpose()
+        }
+    };
+}
+pub(crate) use nullable;

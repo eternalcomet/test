@@ -1,3 +1,4 @@
+use crate::utils::path::resolve_path_at_cwd;
 use alloc::string::String;
 use alloc::vec::Vec;
 use axerrno::{AxError, LinuxResult};
@@ -15,7 +16,7 @@ pub fn sys_execve_impl(
     envs: Vec<String>,
 ) -> LinuxResult<isize> {
     // we must check if the program exists before unmapping the address space
-    let _ = axfs::api::File::open(&args[0])?;
+    let _ = resolve_path_at_cwd(Some(&args[0]))?;
 
     if current_process().get_threads().len() > 1 {
         // TODO: kill other threads except leader thread

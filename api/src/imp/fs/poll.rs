@@ -1,4 +1,5 @@
-use arceos_posix_api::{Pipe, get_file_like};
+use crate::core::fs::fd::fd_lookup;
+use crate::core::fs::pipe::Pipe;
 use axerrno::LinuxResult;
 use axtask::yield_now;
 use bitflags::bitflags;
@@ -56,7 +57,7 @@ pub fn sys_poll_impl(fds: &mut [PollEntry], timeout: u64, block: bool) -> LinuxR
                 // ignore it
                 continue;
             }
-            let f = get_file_like(entry.fd);
+            let f = fd_lookup(entry.fd);
             if let Err(_) = f {
                 // invalid request: fd isn't open
                 entry.results = PollFlags::POLLNVAL;

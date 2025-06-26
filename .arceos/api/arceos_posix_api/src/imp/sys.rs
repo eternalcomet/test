@@ -35,7 +35,7 @@ pub fn sys_sysconf(name: c_int) -> c_long {
             ctypes::_SC_AVPHYS_PAGES => Ok(avail_pages),
             // Maximum number of files per process
             #[cfg(feature = "fd")]
-            ctypes::_SC_OPEN_MAX => Ok(super::fd_ops::AX_FILE_LIMIT),
+            ctypes::_SC_OPEN_MAX => Ok(1024),
             _ => Ok(0),
         }
     })

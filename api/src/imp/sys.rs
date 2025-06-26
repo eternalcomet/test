@@ -2,6 +2,9 @@ use axerrno::LinuxResult;
 
 use crate::ptr::{PtrWrapper, UserPtr};
 
+const OS_NAME: &str = "UndefinedOS";
+const OS_VERSION: &str = "10.0.0";
+
 #[repr(C)]
 pub struct UtsName {
     /// sysname
@@ -21,12 +24,12 @@ pub struct UtsName {
 impl Default for UtsName {
     fn default() -> Self {
         Self {
-            sysname: Self::from_str("Starry"),
-            nodename: Self::from_str("Starry - machine[0]"),
-            release: Self::from_str("10.0.0"),
-            version: Self::from_str("10.0.0"),
-            machine: Self::from_str("10.0.0"),
-            domainname: Self::from_str("https://github.com/BattiestStone4/Starry-On-ArceOS"),
+            sysname: Self::from_str(OS_NAME),
+            nodename: Self::from_str("UndefinedOS-DESKTOP"),
+            release: Self::from_str(OS_VERSION),
+            version: Self::from_str(OS_VERSION),
+            machine: Self::from_str(option_env!("ARCH").unwrap_or("riscv64")),
+            domainname: Self::from_str("localdomain"),
         }
     }
 }

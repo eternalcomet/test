@@ -6,7 +6,7 @@ members = [
     "modules/axconfig",
     "modules/axdisplay",
     "modules/axdriver",
-    "modules/axfs",
+    "modules/axfs-ng",
     "modules/axhal",
     "modules/axlog",
     "modules/axmm",
@@ -16,14 +16,11 @@ members = [
     "modules/axruntime",
     "modules/axsync",
     "modules/axtask",
-
     "api/axfeat",
     "api/arceos_api",
     "api/arceos_posix_api",
-
     "ulib/axstd",
     "ulib/axlibc",
-
     "examples/helloworld",
     "examples/httpclient",
     "examples/httpserver",
@@ -44,7 +41,6 @@ categories = ["os", "no-std"]
 
 [workspace.dependencies]
 axstd = { path = "ulib/axstd" }
-axlibc = { path = "ulib/axlibc" }
 
 arceos_api = { path = "api/arceos_api" }
 arceos_posix_api = { path = "api/arceos_posix_api" }
@@ -54,7 +50,10 @@ axalloc = { path = "modules/axalloc" }
 axconfig = { path = "modules/axconfig" }
 axdisplay = { path = "modules/axdisplay" }
 axdriver = { path = "modules/axdriver" }
-axfs = { path = "modules/axfs" }
+axfs-ng = { path = "modules/axfs-ng", default-features = false, features = [
+    "fat",
+    "thread-local",
+] }
 axhal = { path = "modules/axhal" }
 axlog = { path = "modules/axlog" }
 axmm = { path = "modules/axmm" }
@@ -65,11 +64,13 @@ axsync = { path = "modules/axsync" }
 axtask = { path = "modules/axtask" }
 axdma = { path = "modules/axdma" }
 
+undefined-vfs = { git = "https://github.com/undefined-os/vfs" }
+
 memory_addr = "0.4"
 
 [profile.release]
 lto = true
 
 [patch.crates-io]
-page_table_multiarch = { git = "https://github.com/eternalcomet/page_table_multiarch.git" }
-page_table_entry = { git = "https://github.com/eternalcomet/page_table_multiarch.git" }
+page_table_multiarch = { git = "https://github.com/Mivik/page_table_multiarch.git", rev = "2659e3b" }
+page_table_entry = { git = "https://github.com/Mivik/page_table_multiarch.git", rev = "2659e3b" }

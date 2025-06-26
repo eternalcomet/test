@@ -5,6 +5,11 @@ use linux_raw_sys::general::{
 };
 use num_enum::TryFromPrimitive;
 
+// hard limits
+// TODO: make them configurable
+/// hard limit for `RLIMIT_NOFILE`
+pub const RLIMIT_MAX_FILES: usize = 1024;
+
 pub const RLIMIT_INFINITY: u64 = u64::MAX;
 const _: () = assert!(RLIMIT_INFINITY == RLIM_INFINITY as i64 as u64);
 
@@ -66,7 +71,8 @@ impl ResourceLimits {
             ResourceLimit::new(axconfig::plat::USER_STACK_SIZE as u64, RLIMIT_INFINITY);
         limits[ResourceLimitType::CORE as usize] = ResourceLimit::new(0, RLIMIT_INFINITY);
         limits[ResourceLimitType::NPROC as usize] = ResourceLimit::new(10000, 10000);
-        limits[ResourceLimitType::NOFILE as usize] = ResourceLimit::new(1024, 1024 * 1024); // 1024 files, 1M files max
+        limits[ResourceLimitType::NOFILE as usize] =
+            ResourceLimit::new(1024, RLIMIT_MAX_FILES as _);
         Self(limits)
     }
 

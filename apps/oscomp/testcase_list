@@ -1,44 +1,42 @@
-# ============ init code for oscomp test ============
-# setup the environment
-/musl/busybox mkdir -p /bin
-/musl/busybox cp /musl/busybox /bin/busybox
-# TODO: link busybox to /bin
-busybox cp /musl/busybox /bin/ls
+# ============ setup the environment ============
+alias busybox=/musl/busybox
+
+# setup binaries
+busybox mkdir -p /bin
+busybox --install -s /bin
+cp /musl/busybox /bin/busybox
+
+# setup libraries
 busybox mkdir -p /lib
-busybox mkdir -p /lib64
-busybox cp -v /glibc/lib/ld-linux-* /lib/
-# basic testcase on riscv64 requires "ld-linux-riscv64-lp64.so.1",
-# but we only have "ld-linux-riscv64-lp64d.so.1" in /glibc/lib
-busybox cp -v /musl/lib/libc.so /lib/ld-linux-riscv64-lp64.so.1
+ln -v -s /glibc/lib/libc.so.6 /lib/libc.so.6
+ln -v -s /glibc/lib/libm.so.6 /lib/libm.so.6
+ln -v -s /lib/libc.so.6 /lib/libc.so
+ln -v -s /lib/libm.so.6 /lib/libm.so
+ln -v -s /musl/lib/libc.so /lib/ld-musl-loongarch-lp64d.so.1
+ln -v -s /glibc/lib/ld-linux-loongarch-lp64d.so.1 /lib/ld-linux-loongarch-lp64d.so.1
+ln -v -s /musl/lib/libc.so /lib/ld-musl-riscv64.so.1
+ln -v -s /musl/lib/libc.so /lib/ld-musl-riscv64-sf.so.1
+ln -v -s /glibc/lib/ld-linux-riscv64-lp64d.so.1 /lib/ld-linux-riscv64-lp64d.so.1
+ln -v -s /musl/lib/libc.so /lib/ld-linux-riscv64-lp64.so.1
+ln -v -s /lib /lib64
+mkdir -p /usr
+ln -v -s /lib /usr/lib64
 
 # ============ test cases compiled with musl ============
-# setup musl libraries
-# TODO: use symlink instead of cp
-busybox cp -v /musl/lib/libc.so /lib/ld-musl-riscv64.so.1
-# busybox cp /musl/lib/libc.so /lib/ld-musl-x86_64.so.1
-# busybox cp /musl/lib/libc.so /lib/ld-musl-loongarch-lp64d.so.1
-# busybox cp /musl/lib/libc.so /lib/ld-musl-aarch64.so.1
-busybox cp -v /musl/lib/*.so /lib/
-busybox cp /musl/lib/dlopen_dso.so /musl
-# busybox cp -r /lib/. /lib64/
-busybox ls -l /lib/
-# begin test
-/musl/basic_testcode.sh
-/musl/libctest_testcode.sh
-/musl/busybox_testcode.sh
-/musl/lua_testcode.sh
-/musl/iozone_testcode.sh
+cd /musl || exit 1
+# ./basic/gettimeofday
+./basic_testcode.sh
+exit
+./lua_testcode.sh
+./libctest_testcode.sh
+./busybox_testcode.sh
+./libcbench_testcode.sh
+./iozone_testcode.sh
 
 # ============ test cases compiled with glibc ============
-# setup glibc libraries
-busybox cp -v /glibc/lib/. /lib/
-# under loongarch64, lwext4 will crash
-# busybox cp -r /lib/. /lib64/
-# busybox ls -l /lib64/
-
-# begin test
-/glibc/basic_testcode.sh
-/glibc/libctest_testcode.sh
-/glibc/busybox_testcode.sh
-/glibc/lua_testcode.sh
-/glibc/iozone_testcode.sh
+cd /glibc || exit 1
+./basic_testcode.sh
+./lua_testcode.sh
+./busybox_testcode.sh
+./libcbench_testcode.sh
+./iozone_testcode.sh

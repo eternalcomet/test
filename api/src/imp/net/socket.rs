@@ -3,16 +3,18 @@ use arceos_posix_api::ctypes::{
     AF_INET, IPPROTO_TCP, IPPROTO_UDP, MAXADDRS, SOCK_STREAM, addrinfo, aibuf, aibuf_sa, size_t,
     sockaddr, sockaddr_in, socklen_t,
 };
-use arceos_posix_api::{FileLike, FileStatus, add_file_like, get_file_like};
 use core::ffi::{CStr, c_char, c_int, c_void};
 use core::mem::size_of;
 use core::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 
+use crate::core::fs::fd::{FdFlags, FileLike, fd_add, fd_lookup};
 use axerrno::{LinuxError, LinuxResult};
+use axfs_ng::api::FileFlags;
 use axio::PollState;
 use axnet::{TcpSocket, UdpSocket};
 use axsync::Mutex;
 use num_enum::TryFromPrimitive;
+use undefined_vfs::types::Metadata;
 
 #[derive(TryFromPrimitive, Debug)]
 #[repr(u8)]
@@ -31,11 +33,11 @@ pub enum Socket {
 
 impl Socket {
     fn add_to_fd_table(self) -> LinuxResult<c_int> {
-        add_file_like(Arc::new(self))
+        fd_add(Arc::new(self), FdFlags::empty())
     }
 
     fn from_fd(fd: c_int) -> LinuxResult<Arc<Self>> {
-        let f = get_file_like(fd)?;
+        let f = fd_lookup(fd)?;
         f.into_any()
             .downcast::<Self>()
             .map_err(|_| LinuxError::EINVAL)
@@ -191,10 +193,10 @@ impl FileLike for Socket {
         self.send(buf)
     }
 
-    fn stat(&self) -> LinuxResult<FileStatus> {
+    fn status(&self) -> LinuxResult<Metadata> {
         // TODO: implement socket stat
         let _mode = 0o140000 | 0o777u32; // S_IFSOCK | rwxrwxrwx
-        Ok(FileStatus::default())
+        Ok(Metadata::default())
     }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn core::any::Any + Send + Sync> {
@@ -205,12 +207,21 @@ impl FileLike for Socket {
         self.poll()
     }
 
-    fn set_nonblocking(&self, nonblock: bool) -> LinuxResult {
-        match self {
-            Socket::Udp(udpsocket) => udpsocket.lock().set_nonblocking(nonblock),
-            Socket::Tcp(tcpsocket) => tcpsocket.lock().set_nonblocking(nonblock),
-        }
-        Ok(())
+    // fn set_nonblocking(&self, nonblock: bool) -> LinuxResult {
+    //     match self {
+    //         Socket::Udp(udpsocket) => udpsocket.lock().set_nonblocking(nonblock),
+    //         Socket::Tcp(tcpsocket) => tcpsocket.lock().set_nonblocking(nonblock),
+    //     }
+    //     Ok(())
+    // }
+
+    fn get_flags(&self) -> FileFlags {
+        // TODO
+        FileFlags::empty()
+    }
+
+    fn set_flags(&self, flags: FileFlags) {
+        warn!("set_flags() not implemented for Socket: {:?}", flags);
     }
 }
 
@@ -274,7 +285,7 @@ pub fn sys_socket(domain: c_int, socktype: c_int, protocol: c_int) -> LinuxResul
     match (domain, socktype, protocol) {
         (AF_INET, SOCK_STREAM, IPPROTO_TCP) | (AF_INET, SOCK_STREAM, 0) => {
             let socket = Socket::Tcp(Mutex::new(TcpSocket::new()));
-            let _ = socket.set_nonblocking((socktype & SOCK_NONBLOCK) != 0);
+            // let _ = socket.set_nonblocking((socktype & SOCK_NONBLOCK) != 0);
             // TODO: set close on exec
             // socket.set_close_on_exec((socktype & SOCK_CLOEXEC) != 0);
             socket
@@ -282,7 +293,7 @@ pub fn sys_socket(domain: c_int, socktype: c_int, protocol: c_int) -> LinuxResul
                 .map(|fd| fd as isize)
                 .map_err(|_| LinuxError::EMFILE)
         }
-        (AF_INET, SOCK_DGRAM, IPPROTO_UDP) | (AF_INET, SOCK_DGRAM, 0) => {
+        (AF_INET, _sock_dgram, IPPROTO_UDP) | (AF_INET, _sock_dgram, 0) => {
             Socket::Udp(Mutex::new(UdpSocket::new()))
                 .add_to_fd_table()
                 .map(|fd| fd as isize)

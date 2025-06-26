@@ -5,7 +5,6 @@ extern crate alloc;
 extern crate axlog;
 
 pub mod ctypes;
-pub mod entry;
 pub mod mm;
 pub mod process;
 pub mod resource;

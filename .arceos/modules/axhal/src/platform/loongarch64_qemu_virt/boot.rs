@@ -16,25 +16,19 @@ static mut BOOT_PT_L1: [LA64PTE; 512] = [LA64PTE::empty(); 512];
 unsafe fn init_boot_page_table() {
     unsafe {
         let l1_va = va!(&raw const BOOT_PT_L1 as usize);
-
-        // First-level page table entry configuration:
-        // 0x0000_0000_0000 ~ 0x0080_0000_0000, use table mapping
+        // 0x0000_0000_0000 ~ 0x0080_0000_0000, table
         BOOT_PT_L0[0] = LA64PTE::new_table(crate::mem::virt_to_phys(l1_va));
-
-        // Second-level page table entry configuration:
-        // 0x0000_0000..0x4000_0000, 1GB large page, device memory attributes
+        // 0x0000_0000..0x4000_0000, VPWXGD, 1G block
         BOOT_PT_L1[0] = LA64PTE::new_page(
             pa!(0),
             MappingFlags::READ | MappingFlags::WRITE | MappingFlags::DEVICE,
-            true, // large page flag
+            true,
         );
-
-        // 0x8000_0000..0xc000_0000, 1GB large page, kernel memory attributes
-        // Note: Address must match the kernel-base-paddr configuration
+        // 0x8000_0000..0xc000_0000, VPWXGD, 1G block
         BOOT_PT_L1[2] = LA64PTE::new_page(
-            pa!(axconfig::plat::KERNEL_BASE_PADDR), // Modify to actual kernel load address
+            pa!(0x8000_0000),
             MappingFlags::READ | MappingFlags::WRITE | MappingFlags::EXECUTE,
-            true, // large page flag
+            true,
         );
     }
 }

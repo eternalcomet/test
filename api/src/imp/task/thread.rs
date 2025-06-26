@@ -1,10 +1,10 @@
-use crate::ptr::PtrWrapper;
-use crate::ptr::UserInPtr;
-use axerrno::LinuxResult;
+use crate::ptr::{PtrWrapper, UserInPtr};
+use axerrno::{LinuxError, LinuxResult};
 use core::sync::atomic::Ordering;
 use num_enum::TryFromPrimitive;
 use starry_core::task::{current_process, current_thread, current_thread_data};
 use syscall_trace::syscall_trace;
+use undefined_process::process::get_process;
 
 /// ARCH_PRCTL codes
 ///
@@ -25,6 +25,36 @@ enum ArchPrctlCode {
     GetCpuid = 0x1011,
     /// Enable (addr != 0) or disable (addr == 0) the cpuid instruction for the calling thread.
     SetCpuid = 0x1012,
+}
+
+pub fn sys_setpgid(pid: u32, pgid: u32) -> LinuxResult<isize> {
+    let process = if pid == 0 {
+        current_process()
+    } else {
+        if pid == current_process().get_pid(){
+            current_process()
+        }else{
+            current_process().get_child(pid).ok_or(LinuxError::ESRCH)?.clone()
+        }
+    };
+    if pgid == 0 {
+        process.create_group();
+    } else if pgid < 0 || pgid > 4194304 {
+        return Err(LinuxError::EINVAL);
+    } else {
+        if !process.move_to_group(pgid) {
+            return Err(LinuxError::EPERM);
+        }
+    }
+    Ok(0)
+}
+pub fn sys_getpgid(pid: u32) -> LinuxResult<isize> {
+    let process = if pid == 0 {
+        current_process()
+    } else {
+        get_process(pid).ok_or(LinuxError::ESRCH)?
+    };
+    Ok(process.get_group().get_pgid() as _)
 }
 
 #[syscall_trace]
@@ -56,7 +86,13 @@ pub fn sys_set_tid_address(tid_ptd: UserInPtr<i32>) -> LinuxResult<isize> {
 }
 
 #[cfg(target_arch = "x86_64")]
-pub fn sys_arch_prctl(code: i32, addr: UserPtr<u64>, tf: &mut TrapFrame) -> LinuxResult<isize> {
+use axhal::arch::TrapFrame;
+#[cfg(target_arch = "x86_64")]
+pub fn sys_arch_prctl(
+    code: i32,
+    addr: UserInOutPtr<u64>,
+    tf: &mut TrapFrame,
+) -> LinuxResult<isize> {
     use axerrno::LinuxError;
     debug!(
         "arch_prctl: code = {:?}, addr = {:#x}",

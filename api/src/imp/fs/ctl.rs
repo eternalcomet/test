@@ -1,17 +1,16 @@
-use crate::imp::utils::path::resolve_path_with_parent;
-use crate::ptr::UserInPtr;
-use crate::{
-    ptr::{PtrWrapper, UserConstPtr, UserPtr},
-    syscall_instrument,
-};
-use arceos_posix_api::{File, TimeSpec, get_file_like};
+use crate::core::fs::dir::Directory;
+use crate::core::fs::fd::FileLike;
+use crate::core::time::TimeSpec;
+use crate::ptr::{UserInPtr, UserOutPtr, nullable};
+use crate::utils::path::{ResolveFlags, change_current_dir, resolve_path_at};
 use axerrno::{LinuxError, LinuxResult};
-use axfs::fops::DirEntry;
-use axhal::time::{TimeValue, wall_time};
+use axhal::time::wall_time;
 use core::ffi::{c_char, c_void};
+use core::mem::offset_of;
+use core::time::Duration;
 use linux_raw_sys::general::{UTIME_NOW, UTIME_OMIT};
-use macro_rules_attribute::apply;
 use syscall_trace::syscall_trace;
+use undefined_vfs::types::{MetadataUpdate, NodeType};
 
 /// The ioctl() system call manipulates the underlying device parameters
 /// of special files.
@@ -21,18 +20,17 @@ use syscall_trace::syscall_trace;
 /// * `op` - The request code. It is of type unsigned long in glibc and BSD,
 ///   and of type int in musl and other UNIX systems.
 /// * `argp` - The argument to the request. It is a pointer to a memory location
-#[apply(syscall_instrument)]
-pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserPtr<c_void>) -> LinuxResult<isize> {
+#[syscall_trace]
+pub fn sys_ioctl(_fd: i32, _op: usize, _argp: UserInPtr<c_void>) -> LinuxResult<isize> {
     warn!("Unimplemented syscall: SYS_IOCTL");
     Ok(0)
 }
 
-pub fn sys_chdir(path: UserConstPtr<c_char>) -> LinuxResult<isize> {
+#[syscall_trace]
+pub fn sys_chdir(path: UserInPtr<c_char>) -> LinuxResult<isize> {
     let path = path.get_as_str()?;
-    axfs::api::set_current_dir(path).map(|_| 0).map_err(|err| {
-        warn!("Failed to change directory: {err:?}");
-        err.into()
-    })
+    change_current_dir(path)?;
+    Ok(0)
 }
 
 #[repr(C)]
@@ -42,143 +40,47 @@ struct DirEnt {
     d_off: i64,
     d_reclen: u16,
     d_type: u8,
+    d_name: [u8; 0],
 }
 
-#[allow(dead_code)]
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum FileType {
-    Unknown = 0,
-    Fifo = 1,
-    Chr = 2,
-    Dir = 4,
-    Blk = 6,
-    Reg = 8,
-    Lnk = 10,
-    Socket = 12,
-    Wht = 14,
-}
+#[syscall_trace]
+pub fn sys_getdents64(fd: i32, buf: UserOutPtr<u8>, buf_size: usize) -> LinuxResult<isize> {
+    let buf = buf.get_as_mut_slice(buf_size)?;
+    let directory = Directory::from_fd(fd)?;
+    let mut directory = directory.inner();
+    let mut entry_index = directory.get_position();
+    let mut buf_offset = 0;
 
-impl From<axfs::api::FileType> for FileType {
-    fn from(ft: axfs::api::FileType) -> Self {
-        match ft {
-            ft if ft.is_dir() => FileType::Dir,
-            ft if ft.is_file() => FileType::Reg,
-            _ => FileType::Unknown,
-        }
-    }
-}
+    directory.location().read_dir(
+        entry_index,
+        &mut |name: &str, ino: u64, node_type: NodeType, offset: u64| {
+            let name = name.as_bytes();
+            // 这里使用offset_of!宏而不是sizeof来计算d_name字段的偏移量的原因是后者会考虑对齐问题
+            let write_len = offset_of!(DirEnt, d_name) + name.len() + 1;
+            let write_len = write_len.next_multiple_of(align_of::<DirEnt>());
+            if buf_offset + write_len > buf_size {
+                // not enough space in the buffer
+                return false;
+            }
+            unsafe {
+                let entry_ptr = buf.as_mut_ptr().add(buf_offset);
+                let buf_entry_ref = &mut *(entry_ptr.cast::<DirEnt>());
+                buf_entry_ref.d_ino = ino;
+                buf_entry_ref.d_off = offset as _;
+                buf_entry_ref.d_reclen = write_len as _;
+                buf_entry_ref.d_type = node_type as _;
+                let name_ptr = entry_ptr.add(offset_of!(DirEnt, d_name));
+                name_ptr.copy_from_nonoverlapping(name.as_ptr(), name.len());
+                *name_ptr.add(name.len()) = 0; // null-terminate the name
+            }
 
-impl DirEnt {
-    const FIXED_SIZE: usize =
-        size_of::<u64>() + size_of::<i64>() + size_of::<u16>() + size_of::<u8>();
-
-    fn new(ino: u64, off: i64, reclen: usize, file_type: FileType) -> Self {
-        Self {
-            d_ino: ino,
-            d_off: off,
-            d_reclen: reclen as u16,
-            d_type: file_type as u8,
-        }
-    }
-}
-
-pub fn sys_getdents64(fd: i32, buf: UserPtr<c_void>, len: usize) -> LinuxResult<isize> {
-    let buf = buf.get_as_bytes(len)?;
-
-    if len < DirEnt::FIXED_SIZE {
-        warn!("Buffer size too small: {len}");
-        return Err(LinuxError::EINVAL);
-    }
-
-    let directory = arceos_posix_api::Directory::from_fd(fd)?;
-    let directory = directory.inner();
-    let user_buffer = buf as *mut u8;
-    let mut current_offset: usize = 0;
-    loop {
-        // read directory entries into buffer
-        if current_offset + DirEnt::FIXED_SIZE + 2 > len {
-            // there is no enough space for another entry
-            break;
-        }
-        // we don't know how many entries can be contained by the buf provided by user
-        // so we make the buffer small(1)
-        let mut entry_buffer = [DirEntry::default()];
-        let count = directory.lock().read_dir(&mut entry_buffer)?;
-        if count == 0 {
-            // no more entries
-            break;
-        }
-        let entry = &entry_buffer[0];
-        let name = entry.name_as_bytes();
-        let entry_type = FileType::from(entry.entry_type());
-        let entry_length = DirEnt::FIXED_SIZE + name.len() + 1;
-        if current_offset + entry_length > len {
-            // check again
-            // there is no enough space for another entry
-            break;
-        }
-
-        let user_dir_entry = DirEnt::new(
-            1,
-            (current_offset + entry_length) as _,
-            entry_length,
-            entry_type,
-        );
-        unsafe {
-            // let pointer be *mut u8 so that the offset can be calculated
-            let entry_ptr = user_buffer.add(current_offset);
-            (entry_ptr as *mut DirEnt).write(user_dir_entry);
-            let name_ptr = entry_ptr.add(DirEnt::FIXED_SIZE);
-            core::ptr::copy_nonoverlapping(name.as_ptr(), name_ptr, name.len());
-            *name_ptr.add(name.len()) = 0; // null-terminate the name
-        }
-
-        current_offset += entry_length;
-    }
-    Ok(current_offset as _)
-}
-
-/// create a link from new_path to old_path
-/// old_path: old file path
-/// new_path: new file path
-/// flags: link flags
-/// return value: return 0 when success, else return -1.
-pub fn sys_linkat(
-    old_dirfd: i32,
-    old_path: UserConstPtr<c_char>,
-    new_dirfd: i32,
-    new_path: UserConstPtr<c_char>,
-    flags: i32,
-) -> LinuxResult<isize> {
-    let old_path = old_path.get_as_null_terminated()?;
-    let new_path = new_path.get_as_null_terminated()?;
-
-    if flags != 0 {
-        warn!("Unsupported flags: {flags}");
-    }
-
-    // handle old path
-    arceos_posix_api::handle_file_path(old_dirfd as isize, Some(old_path.as_ptr() as _), false)
-        .inspect_err(|err| warn!("Failed to convert new path: {err:?}"))
-        .and_then(|old_path| {
-            //handle new path
-            arceos_posix_api::handle_file_path(
-                new_dirfd as isize,
-                Some(new_path.as_ptr() as _),
-                false,
-            )
-            .inspect_err(|err| warn!("Failed to convert new path: {err:?}"))
-            .map(|new_path| (old_path, new_path))
-        })
-        .and_then(|(old_path, new_path)| {
-            arceos_posix_api::HARDLINK_MANAGER
-                .create_link(&new_path, &old_path)
-                .inspect_err(|err| warn!("Failed to create link: {err:?}"))
-                .map_err(Into::into)
-        })
-        .map(|_| 0)
-        .map_err(|err| err.into())
+            buf_offset += write_len;
+            entry_index = offset;
+            true
+        },
+    )?;
+    directory.set_position(entry_index);
+    Ok(buf_offset as _)
 }
 
 #[syscall_trace]
@@ -188,42 +90,27 @@ pub fn sys_utimensat(
     times: UserInPtr<TimeSpec>,
     flags: u32,
 ) -> LinuxResult<isize> {
-    pub fn timevalue_to_timespec(tv: TimeValue) -> TimeSpec {
-        TimeSpec {
-            seconds: tv.as_secs() as _,
-            nanoseconds: tv.subsec_nanos() as _,
+    fn into_duration(time: TimeSpec) -> Option<Duration> {
+        match time.nanoseconds as u32 {
+            UTIME_OMIT => None,
+            UTIME_NOW => Some(wall_time()),
+            _ => Some(Duration::from(time)),
         }
     }
-    fn utime_to_duration(time: &TimeSpec) -> Option<TimeSpec> {
-        match time.seconds {
-            val if val == UTIME_OMIT as _ => None,
-            val if val == UTIME_NOW as _ => Some(timevalue_to_timespec(wall_time())),
-            _ => Some(time.clone()),
-        }
-    }
-    if times.is_null() {
-        return Ok(0);
-    }
-    let times = times.get_as_slice(2)?;
-    let atime = utime_to_duration(&times[0]);
-    let mtime = utime_to_duration(&times[1]);
-    if atime.is_none() && mtime.is_none() {
-        return Ok(0);
-    }
-    if path.is_null() {
-        let file = get_file_like(dir_fd)?.into_any();
-        let file = file.downcast_ref::<File>();
-        let file = file.ok_or(LinuxError::ENFILE)?;
-        if let Some(atime) = atime {
-            *file.atime.lock() = atime.into();
-        }
-        if let Some(mtime) = mtime {
-            *file.mtime.lock() = mtime.into();
-        }
+    let path = nullable!(path.get_as_str())?;
+    let resolve_flags = ResolveFlags::from_bits_truncate(flags);
+    let resolve = resolve_path_at(dir_fd, path, resolve_flags)?;
+    let location = resolve.location().ok_or(LinuxError::EINVAL)?;
+    let (atime, mtime) = if times.is_null() {
+        (Some(wall_time()), Some(wall_time()))
     } else {
-        let path = path.get_as_str()?;
-        let file_path = resolve_path_with_parent(dir_fd, path)?;
-        warn!("[sys_utimensat] not support path: {file_path:?}");
-    }
+        let times = times.get_as_slice(2)?;
+        (into_duration(times[0]), into_duration(times[1]))
+    };
+    location.update_metadata(MetadataUpdate {
+        atime,
+        mtime,
+        ..Default::default()
+    })?;
     Ok(0)
 }

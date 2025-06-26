@@ -1,7 +1,9 @@
 use core::ffi::CStr;
 
+use alloc::string::ToString;
 use alloc::{string::String, vec};
-use axerrno::{AxError, AxResult};
+use axerrno::{AxError, AxResult, LinuxError, LinuxResult};
+use axfs_ng::api::FS_CONTEXT;
 use axhal::mem::virt_to_phys;
 use axhal::paging::{MappingFlags, PageSize};
 use axmm::{AddrSpace, kernel_aspace};
@@ -106,11 +108,16 @@ pub fn load_user_app(
     uspace: &mut AddrSpace,
     args: &[String],
     envs: &[String],
-) -> AxResult<(VirtAddr, VirtAddr)> {
+) -> LinuxResult<(VirtAddr, VirtAddr)> {
     if args.is_empty() {
-        return Err(AxError::InvalidInput);
+        return Err(LinuxError::EINVAL);
     }
-    let file_data = axfs::api::read(args[0].as_str())?;
+    let context = FS_CONTEXT.lock();
+    let path = args[0].as_str();
+    let file_data = context.read(path).inspect_err(|_| {
+        error!("Load user app could not read file: {}", path);
+    })?;
+    drop(context);
     let elf = ElfFile::new(&file_data).map_err(|_| AxError::InvalidData)?;
 
     if let Some(interp) = elf
@@ -122,26 +129,11 @@ pub fn load_user_app(
             _ => panic!("Invalid data in Interp Elf Program Header"),
         };
 
-        let interp_path = axfs::api::canonicalize(
-            CStr::from_bytes_with_nul(interp)
-                .map_err(|_| AxError::InvalidData)?
-                .to_str()
-                .map_err(|_| AxError::InvalidData)?,
-        )?;
-
-        // if interp_path == "/lib/ld-linux-riscv64-lp64.so.1"
-        //     || interp_path == "/lib/ld-musl-riscv64.so.1"
-        //     || interp_path == "/lib64/ld-linux-loongarch-lp64d.so.1"
-        // // || interp_path == "/lib64/ld-linux-x86-64.so.2"
-        // // || interp_path == "/lib/ld-linux-aarch64.so.1"
-        // {
-        //     // TODO: Use soft link
-        //     interp_path = String::from("/musl/lib/libc.so");
-        // }
-        //
-        // // if interp_path == "/lib64/ld-linux-x86-64.so.2" {
-        //     interp_path = String::from("/glibc/lib/ld-linux-x86-64.so.2")
-        // }
+        let interp_path = CStr::from_bytes_with_nul(interp)
+            .map_err(|_| AxError::InvalidData)?
+            .to_str()
+            .map_err(|_| AxError::InvalidData)?
+            .to_string();
 
         // Set the first argument to the path of the user app.
         let mut new_args = vec![interp_path];

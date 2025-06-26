@@ -119,6 +119,8 @@ pub struct ThreadData {
     pub addr_set_child_tid: AtomicUsize,
     /// The thread-level signal manager
     pub signal: ThreadSignalManager<RawMutex, WaitQueueWrapper>,
+    // File system context
+    // pub fs_context: Mutex<Arc<FsContext<RawMutex>>>,
 }
 
 impl ThreadData {

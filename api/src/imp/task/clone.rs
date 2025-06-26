@@ -1,8 +1,8 @@
+use crate::core::fs::fd::FD_TABLE;
 use alloc::string::ToString;
 use alloc::sync::Arc;
-use arceos_posix_api::FD_TABLE;
 use axerrno::{LinuxError, LinuxResult};
-use axfs::{CURRENT_DIR, CURRENT_DIR_PATH};
+use axfs_ng::api::FS_CONTEXT;
 use axhal::arch::UspaceContext;
 use axsignal::Signo;
 use axtask::current;
@@ -172,6 +172,7 @@ pub fn sys_clone_impl(
     };
 
     // share or create process/thread data
+    // TODO: 替换为thread_data的clone
     if clone_flags.contains(CloneFlags::FILES) {
         FD_TABLE
             .deref_from(&thread_data.namespace)
@@ -183,19 +184,13 @@ pub fn sys_clone_impl(
     }
 
     if clone_flags.contains(CloneFlags::FS) {
-        CURRENT_DIR
+        FS_CONTEXT
             .deref_from(&thread_data.namespace)
-            .init_shared(CURRENT_DIR.share());
-        CURRENT_DIR_PATH
-            .deref_from(&thread_data.namespace)
-            .init_shared(CURRENT_DIR_PATH.share());
+            .init_shared(FS_CONTEXT.share());
     } else {
-        CURRENT_DIR
+        FS_CONTEXT
             .deref_from(&thread_data.namespace)
-            .init_new(CURRENT_DIR.copy_inner());
-        CURRENT_DIR_PATH
-            .deref_from(&thread_data.namespace)
-            .init_new(CURRENT_DIR_PATH.copy_inner());
+            .init_new(FS_CONTEXT.copy_inner());
     }
 
     if clone_flags.contains(CloneFlags::CHILD_SETTID) {

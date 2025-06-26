@@ -29,6 +29,13 @@ pub fn sys_shmget(key: c_int, size: c_ulong, shm_flag: c_int) -> LinuxResult<isi
     // TODO: permission check
     if key == IPC_PRIVATE {
         // IPC get private
+        // TODO: differentiate the caller of shm
+        if SHARED_MEMORY_MANAGER.mem_map.lock().len() > 4096 {
+            return Err(LinuxError::ENOSPC);
+        }
+        if size == 0 {
+            return Err(LinuxError::EINVAL);
+        }
         let key = SHARED_MEMORY_MANAGER.next_available_key();
         let shared_memory = SHARED_MEMORY_MANAGER.create(key, size)?;
         Ok(shared_memory.key as _)
@@ -38,6 +45,13 @@ pub fn sys_shmget(key: c_int, size: c_ulong, shm_flag: c_int) -> LinuxResult<isi
             if !flags.contains(ShmFlags::IPC_CREAT) {
                 Err(LinuxError::ENOENT)
             } else {
+                // TODO: differentiate the caller of shm
+                if SHARED_MEMORY_MANAGER.mem_map.lock().len() > 4096 {
+                    return Err(LinuxError::ENOSPC);
+                }
+                if size == 0 {
+                    return Err(LinuxError::EINVAL);
+                }
                 let shared_memory = SHARED_MEMORY_MANAGER.create(key, size)?;
                 Ok(shared_memory.key as _)
             }
