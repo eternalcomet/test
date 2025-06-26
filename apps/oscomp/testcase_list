@@ -21,9 +21,15 @@ ln -v -s /musl/lib/libc.so /lib/ld-linux-riscv64-lp64.so.1
 ln -v -s /lib /lib64
 mkdir -p /usr
 ln -v -s /lib /usr/lib64
+busybox cp -v /musl/lib/*.so /lib/
+busybox cp -v /musl/lib/dlopen_dso.so /musl/dlopen_dso.so
+ls -la /musl
 
 # ============ test cases compiled with musl ============
 cd /musl || exit 1
+stat ./dlopen_dso.so
+./entry-dynamic.exe dlopen
+exit
 ./basic_testcode.sh
 ./lua_testcode.sh
 ./libctest_testcode.sh
